@@ -14,7 +14,6 @@ app.post('/api/swarm', async (req, res) => {
   console.log(`[CEO COMMAND]: ${command}`);
   
   try {
-    // Groq AI ko command bhejna
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -22,22 +21,22 @@ app.post('/api/swarm', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192", // Fast & Smart AI Model
+        model: "llama-3.1-8b-instant", // Verified active Groq model
         messages: [
-          { role: "system", content: "You are Nexus, a highly intelligent and obedient AI assistant for the CEO of NexusForge. Reply in short, professional, and slightly futuristic tone." },
+          { role: "system", content: "You are Nexus, a highly intelligent and obedient AI assistant for the CEO of NexusForge. Reply in short, professional, and futuristic tone." },
           { role: "user", content: command }
         ]
       })
     });
 
     const data = await response.json();
-    const aiReply = data.choices[0].message.content;
     
-    // AI ka reply War Room me bhejna
-    res.json({
-      status: "success",
-      managerReply: aiReply
-    });
+    if (data.choices && data.choices.length > 0) {
+      const aiReply = data.choices[0].message.content;
+      res.json({ status: "success", managerReply: aiReply });
+    } else {
+      res.json({ status: "error", managerReply: "AI Error: " + (data.error?.message || "Invalid response") });
+    }
 
   } catch (error) {
     console.error("AI Error:", error);
