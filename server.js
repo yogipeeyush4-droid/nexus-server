@@ -14,7 +14,7 @@ const safeBaselineMemory = {
 let aiMemory = JSON.parse(JSON.stringify(safeBaselineMemory));
 
 app.get('/', (req, res) => {
-  res.send(`NexusForge Self-Healing Core v${aiMemory.evolutionVersion} is ONLINE & PROTECTED! 🛡️️🧬`);
+  res.send(`NexusForge Self-Healing Core v${aiMemory.evolutionVersion} is ONLINE & PROTECTED! 🛡️🧬`);
 });
 
 // Autonomous Mutation & Self-Healing Endpoint
@@ -93,6 +93,7 @@ app.post('/api/swarm', async (req, res) => {
   }
 });
 
-const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log("Self-Healing Memory Core listening on port " + listener.address().port);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log("Self-Healing Memory Core listening on port " + PORT);
 });
