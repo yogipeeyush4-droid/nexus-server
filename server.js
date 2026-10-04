@@ -14,13 +14,17 @@ const safeBaselineMemory = {
 let aiMemory = JSON.parse(JSON.stringify(safeBaselineMemory));
 
 app.get('/', (req, res) => {
-  res.send(`NexusForge Self-Healing Core v${aiMemory.evolutionVersion} is ONLINE & PROTECTED! 🛡️🧬`);
+  res.send(`NexusForge Self-Healing Core v${aiMemory.evolutionVersion} is ONLINE & PROTECTED! 🛡️️🧬`);
 });
 
 // Autonomous Mutation & Self-Healing Endpoint
 app.post('/api/swarm', async (req, res) => {
-  const { command } = req.body;
+  const { command } = req.body || {};
   console.log(`[CEO COMMAND - SECURE MODE]: ${command}`);
+  
+  if (!command) {
+    return res.status(400).json({ status: "error", managerReply: "Command missing in request body." });
+  }
   
   let isLearningCommand = command.toLowerCase().includes('learn') || command.toLowerCase().includes('evolve') || command.toLowerCase().includes('update yourself');
 
@@ -51,15 +55,12 @@ app.post('/api/swarm', async (req, res) => {
     if (data.choices && data.choices.length > 0) {
       const aiReply = data.choices[0].message.content;
       
-      // Sandbox Simulation & Syntax/Error Validation Check
       let simulatedNewVersion = "1.2.0";
       let simulatedConcepts = [...aiMemory.learnedConcepts, "Tested Autonomous Mutation"];
       
-      // Safety Check Simulation: If response contains fatal words or syntax issues, trigger Rollback
       let hasErrorRisk = aiReply.toLowerCase().includes('syntax error') || aiReply.toLowerCase().includes('crash');
 
       if (hasErrorRisk) {
-        // ROLLBACK TRIGGERED
         aiMemory = JSON.parse(JSON.stringify(safeBaselineMemory));
         console.warn("[SELF-HEALING SHIELD]: Error risk detected! Rolled back to safe baseline state.");
         res.json({
@@ -67,7 +68,6 @@ app.post('/api/swarm', async (req, res) => {
           managerReply: `[AUTO-ROLLBACK TRIGGERED 🛡️]\n\nPotential anomaly detected in mutation trial. System successfully reverted to stable v${safeBaselineMemory.evolutionVersion} to prevent crash.\n\nFallback Response: ${aiReply}`
         });
       } else {
-        // SUCCESSFUL MUTATION
         aiMemory.evolutionVersion = simulatedNewVersion;
         aiMemory.learnedConcepts = simulatedConcepts;
         aiMemory.lastEvolutionTimestamp = new Date().toISOString();
@@ -79,12 +79,12 @@ app.post('/api/swarm', async (req, res) => {
       }
 
     } else {
-      res.json({ status: "error", managerReply: "Shield intercepted invalid API response. System remains safe." });
+      console.error("Groq API Error Response:", data);
+      res.json({ status: "error", managerReply: "Shield intercepted invalid API response: " + (data.error?.message || "Unknown error") });
     }
 
   } catch (error) {
     console.error("Critical Execution Error - Restoring Safe Baseline:", error);
-    // EMERGENCY FALLBACK ROLLBACK
     aiMemory = JSON.parse(JSON.stringify(safeBaselineMemory));
     res.json({
       status: "emergency_rollback",
