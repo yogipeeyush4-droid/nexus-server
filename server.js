@@ -6,7 +6,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-  res.send("NexusForge AI Node is ONLINE! 🚀");
+  res.send("NexusForge AI Swarm Core is ONLINE! 🚀");
 });
 
 app.post('/api/swarm', async (req, res) => {
@@ -14,6 +14,7 @@ app.post('/api/swarm', async (req, res) => {
   console.log(`[CEO COMMAND]: ${command}`);
   
   try {
+    // Groq AI ko Swarm orchestration ke liye prompt bhejna
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -21,9 +22,12 @@ app.post('/api/swarm', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-20b", // Verified active Groq model
+        model: "openai/gpt-oss-20b",
         messages: [
-          { role: "system", content: "You are Nexus, a highly intelligent and obedient AI assistant for the CEO of NexusForge. Reply in short, professional, and futuristic tone." },
+          { 
+            role: "system", 
+            content: "You are NexusManager, the lead AI of NexusForge Swarm. Coordinate with your specialized agents (@Design_AI, @Coder_DB_AI, @Security_AI, @Tester_AI) to break down the CEO's command. Provide a structured, multi-agent status and execution response in a futuristic, professional tone." 
+          },
           { role: "user", content: command }
         ]
       })
@@ -33,20 +37,23 @@ app.post('/api/swarm', async (req, res) => {
     
     if (data.choices && data.choices.length > 0) {
       const aiReply = data.choices[0].message.content;
-      res.json({ status: "success", managerReply: aiReply });
+      res.json({ 
+        status: "success", 
+        managerReply: `[SWARM ACTIVE] ${aiReply}` 
+      });
     } else {
-      res.json({ status: "error", managerReply: "AI Error: " + (data.error?.message || "Invalid response") });
+      res.json({ status: "error", managerReply: "Swarm Error: " + (data.error?.message || "Invalid response") });
     }
 
   } catch (error) {
-    console.error("AI Error:", error);
+    console.error("Swarm Error:", error);
     res.json({
       status: "error",
-      managerReply: "AI Connection interrupted. System offline!"
+      managerReply: "AI Swarm Connection interrupted. System offline!"
     });
   }
 });
 
 const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log("AI Node listening on port " + listener.address().port);
+  console.log("Swarm Core listening on port " + listener.address().port);
 });
