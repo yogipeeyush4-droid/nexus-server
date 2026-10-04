@@ -21,7 +21,7 @@ app.post('/api/swarm', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "llama-3.1-8b-instant", // Verified active Groq model
+        model: "openai/gpt-oss-20b", // Verified active Groq model
         messages: [
           { role: "system", content: "You are Nexus, a highly intelligent and obedient AI assistant for the CEO of NexusForge. Reply in short, professional, and futuristic tone." },
           { role: "user", content: command }
