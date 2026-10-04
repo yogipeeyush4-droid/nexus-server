@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('fs');
+const vm = require('vm'); // Syntax check karne ke liye safe module
+
 const app = express();
 
 // CORS Middleware taaki Android app/WebView se request kabhi block na ho
@@ -14,6 +17,10 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Files ke paths jahan AI apni memory aur code save karega
+const MEMORY_FILE = './aiMemory.json';
+const DYNAMIC_CODE_FILE = './dynamicCode.js';
+
 // Safe Production Baseline Memory (Rollback Fallback State)
 const safeBaselineMemory = {
   evolutionVersion: "1.1.0",
@@ -21,14 +28,67 @@ const safeBaselineMemory = {
   lastEvolutionTimestamp: new Date().toISOString()
 };
 
-// Active State
-let aiMemory = JSON.parse(JSON.stringify(safeBaselineMemory));
+// 1. Initial Setup: Agar files nahi hain, toh bana do
+if (!fs.existsSync(MEMORY_FILE)) {
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify(safeBaselineMemory, null, 2));
+}
+if (!fs.existsSync(DYNAMIC_CODE_FILE)) {
+    fs.writeFileSync(DYNAMIC_CODE_FILE, "// AI Dynamic Code Here\nmodule.exports = {};");
+}
 
-app.get('/', (req, res) => {
-  res.send(`NexusForge Self-Healing Core v${aiMemory.evolutionVersion} is ONLINE & PROTECTED! 🛡️🧬`);
+// 2. Active State Memory Load (Server restart hone par purani memory wapas layega)
+let aiMemory = JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8'));
+
+// 3. Safe Update Function (Yeh AI ko apni khud ki file update karne dega)
+function updateAICodeSafely(newCodeString, newMemoryData) {
+    try {
+        console.log("🛡️ PRE-EXECUTION VALIDATION START...");
+
+        // Naye code ki syntax checking (Virtual Machine mein bina server crash kiye)
+        const script = new vm.Script(newCodeString); 
+        console.log("✅ Code Syntax Validated 100%. No errors.");
+
+        // Point 5 Active: Jab sab kuch sahi hai, tabhi original file mein write karo
+        fs.writeFileSync(DYNAMIC_CODE_FILE, newCodeString);
+        
+        // Memory File ko bhi naye version ke sath update kar do
+        fs.writeFileSync(MEMORY_FILE, JSON.stringify(newMemoryData, null, 2));
+        
+        // Active Server RAM ko bhi update kar do taaki real-time data change ho jaye
+        aiMemory = newMemoryData;
+
+        console.log("🚀 UPDATE SUCCESSFUL! AI ne apna code aur memory safely update kar li hai.");
+        return { success: true, message: "AI ne safaltapurvak naya update install kar liya hai." };
+
+    } catch (error) {
+        console.error("⚠️ ERROR DETECTED! NEW CODE REJECTED.");
+        console.error("🛡️ AUTO-ROLLBACK SHIELD ACTIVE...");
+        
+        // Rollback: Puraane code ko waisa hi rehne do
+        console.log("✅ Rollback successful. Puraana code aur state abhi bhi chal raha hai.");
+        
+        return { success: false, message: "Code update fail hua. Server ko crash hone se bacha liya gaya aur purana code restore ho gaya hai." };
+    }
+}
+
+// 4. API Endpoint (AI Evolve/Code injection ke liye)
+app.post('/api/ai-evolve', (req, res) => {
+    const { newCode, newMemoryData } = req.body;
+    const result = updateAICodeSafely(newCode, newMemoryData);
+    
+    if (result.success) {
+        res.status(200).json({ status: "SUCCESS", detail: result.message });
+    } else {
+        res.status(400).json({ status: "ROLLBACK", detail: result.message });
+    }
 });
 
-// Autonomous Mutation & Self-Healing Endpoint
+// Root Checking Endpoint
+app.get('/', (req, res) => {
+  res.send(`NexusForge Self-Healing Core v${aiMemory.evolutionVersion} is ONLINE & PROTECTED! 🛡️️🧬`);
+});
+
+// Autonomous Mutation & Self-Healing Endpoint (Aapka main Chat System)
 app.post('/api/swarm', async (req, res) => {
   const { command } = req.body || {};
   console.log(`[CEO COMMAND - SECURE MODE]: ${command}`);
@@ -80,10 +140,13 @@ app.post('/api/swarm', async (req, res) => {
           managerReply: `[AUTO-ROLLBACK TRIGGERED 🛡️]\n\nPotential anomaly detected in mutation trial. System successfully reverted to stable v${safeBaselineMemory.evolutionVersion} to prevent crash.\n\nFallback Response: ${aiReply}`
         });
       } else {
-        // SUCCESSFUL MUTATION
+        // SUCCESSFUL MUTATION - Permanent Save
         aiMemory.evolutionVersion = simulatedNewVersion;
         aiMemory.learnedConcepts = simulatedConcepts;
         aiMemory.lastEvolutionTimestamp = new Date().toISOString();
+
+        // Memory File mein overwrite karo taaki future ke liye save ho jaye
+        fs.writeFileSync(MEMORY_FILE, JSON.stringify(aiMemory, null, 2));
 
         res.json({ 
           status: "success", 
