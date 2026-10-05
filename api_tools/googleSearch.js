@@ -2,19 +2,27 @@
 module.exports = async function(query) {
     console.log(`[SYSTEM] Strict Check Mode: Searching for "${query}"`);
 
-    // Aapki nayi live browser link
-    const NEXUS_BROWSER_URL = 'https://bug-free-doodle-965rp797q5gjh4g9-34127.app.github.dev'; 
+    // Dhyan dein: Codespace ka port 3000 wala URL use karein (jaisa aapke white page wale screenshot me tha)
+    const NEXUS_BROWSER_URL = 'https://bug-free-doodle-965rp797q5gjh4g9-3000.app.github.dev'; 
 
     try {
-        console.log('[SEARCH] 🚀 Seedha Nexus Browser par ja raha hai...');
+        console.log('[SEARCH] 🚀 Seedha Nexus Browser par POST request bhej raha hoon...');
         
-        const res = await fetch(`${NEXUS_BROWSER_URL}/search?q=${encodeURIComponent(query)}`);
+        // Yahan maine GET ko POST me badal diya hai, jaisa index.js ko chahiye
+        const res = await fetch(`${NEXUS_BROWSER_URL}/search`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query: query, maxResults: 3 })
+        });
         
         if (res.ok) {
             const data = await res.json();
             
-            if (data.results && data.results.length > 0) {
-                let resultText = data.results.slice(0, 3).map(i => {
+            // Backend data.data bhej raha hai (data.results nahi)
+            if (data.success && data.data && data.data.length > 0) {
+                let resultText = data.data.slice(0, 3).map(i => {
                     return `Title: ${i.title || "No Title"}\nInfo: ${i.snippet || "No Info"}`;
                 }).join('\n\n');
                 
