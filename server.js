@@ -92,7 +92,9 @@ app.post('/api/swarm', async (req, res) => {
     }
     // --- AI TOOL DECISION LOGIC START ---
     let liveContext = ""; 
-    const searchTriggers = ["search", "google", "news", "aaj", "today", "latest", "mausam"];
+    
+    // YAHAN TRIGGERS MEIN "icon", "website", "dekho", "net" BHI JOD DIYA HAIN TAAKI AI FORAN SEARCH KARE
+    const searchTriggers = ["search", "google", "news", "aaj", "today", "latest", "mausam", "icon", "website", "dekho", "net"];
     const needsSearch = searchTriggers.some(word => safeCommand.toLowerCase().includes(word));
 
     if (needsSearch && global.activeTools && global.activeTools.googleSearch) {
