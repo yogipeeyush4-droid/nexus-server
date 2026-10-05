@@ -58,7 +58,8 @@ module.exports = async function(query) {
     }
 
     // --- LEVEL 4: APNA KHUD KA BROWSER ENGINE (APIs fail hone par yahan aayega) 🚀 ---
-    if (NEXUS_BROWSER_URL && NEXUS_BROWSER_URL !== 'YAHAN_APNA_COPY_KIYA_HUA_LINK_PASTE_KARO') {
+    if (NEXUS_BROWSER_URL && NEXUS_BROWSER_URL !== 'https://automatic-rotary-phone-jr7vxj5j4q99fp7rw-3000.app.github.dev';
+    ') {
         console.log('[SEARCH] Level 4: APIs fail! Apna Nexus Browser Engine chal raha hai... 🚀');
         try {
             const res = await fetch(`${NEXUS_BROWSER_URL}/search?q=${encodeURIComponent(query)}`);
