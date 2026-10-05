@@ -90,7 +90,28 @@ app.post('/api/swarm', async (req, res) => {
       Just reply like a smart assistant: "Understood Boss, saving this to the external memory database." 
       And you MUST append this exact tag at the very end of your response: [LEARNED: <summary of the new concept>].`;
     }
+    // --- AI TOOL DECISION LOGIC START ---
+    let liveContext = ""; 
+    const searchTriggers = ["search", "google", "news", "aaj", "today", "latest", "mausam"];
+    const needsSearch = searchTriggers.some(word => safeCommand.toLowerCase().includes(word));
 
+    if (needsSearch && global.activeTools && global.activeTools.googleSearch) {
+        console.log("[NEXUS] Boss ko live data chahiye. Internet par jaa raha hoon... 🌐");
+        
+        // Naya plugin chalega yahan
+        const searchResult = await global.activeTools.googleSearch(safeCommand);
+        
+        // AI ke dimaag (systemPrompt) mein internet ka data fit karna
+        liveContext = `\n\n[SYSTEM INSTRUCTION - LIVE INTERNET DATA]: 
+Boss ke is sawal ka jawab dene ke liye maine aapke liye live internet se yeh data nikala hai: 
+${searchResult}
+Kripya is data ko padhein aur ek smart, clear aur confident answer Boss ko dein.`;
+        
+        // Purane prompt mein naya live data jod diya
+        systemPrompt = systemPrompt + liveContext;
+    }
+    // --- AI TOOL DECISION LOGIC END ---
+      
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
