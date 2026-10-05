@@ -1,6 +1,7 @@
 module.exports = async function(query) {
     console.log(`[SYSTEM] Searching via Nexus Browser for: "${query}"`);
-    const NEXUS_BROWSER_URL = 'https://bug-free-doodle-965rp797q5gjh4g9-3000.app.github.dev'; 
+    // Naya Google Cloud Shell URL yahan set kar diya hai
+    const NEXUS_BROWSER_URL = 'https://3000-cs-5a4b3fb1-a13b-4d10-861a-5974d7834863.cs-asia-southeast1-fork.cloudshell.dev'; 
 
     try {
         const response = await fetch(`${NEXUS_BROWSER_URL}/search`, {
