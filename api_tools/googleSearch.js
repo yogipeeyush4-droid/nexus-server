@@ -1,58 +1,34 @@
-// MASTER SEARCH TOOL - DIRECT BROWSER TEST MODE
+// STRICT BROWSER CHECK MODE - No Fallbacks!
 module.exports = async function(query) {
-    console.log(`[SYSTEM] Search command received: ${query}`);
+    console.log(`[SYSTEM] Strict Check Mode: Searching for "${query}"`);
 
-    // Aapka Codespace Browser URL
-    const NEXUS_BROWSER_URL = 'https://automatic-rotary-phone-jr7vxj5j4q99fp7rw-3000.app.github.dev'; 
+    // Aapki nayi live browser link
+    const NEXUS_BROWSER_URL = 'https://bug-free-doodle-965rp797q5gjh4g9-34127.app.github.dev'; 
 
-    // --- DIRECT LEVEL 1: APNA BROWSER ENGINE 🚀 ---
-    if (NEXUS_BROWSER_URL) {
-        console.log('[SEARCH] Level 1: Seedha Nexus Browser Engine par bhej raha hoon... 🚀');
-        try {
-            const res = await fetch(`${NEXUS_BROWSER_URL}/search?q=${encodeURIComponent(query)}`);
-            if (res.ok) {
-                const data = await res.json();
-                let resultText = data.results ? formatResults(data.results, "NEXUS BROWSER") : JSON.stringify(data).substring(0, 1000);
-                return `[APNA BROWSER ENGINE]:\n\n${resultText}`;
-            } else {
-                console.log(`[WARNING] Browser Engine HTTP Error: ${res.status}`);
-            }
-        } catch (e) { 
-            console.log(`[WARNING] Browser Engine Failed: ${e.message}`); 
-        }
-    }
-
-    // --- FALLBACK: BASIC SYSTEM ---
     try {
-        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-        const rssRes = await fetch(rssUrl);
-        if (rssRes.ok) {
-            const xmlData = await rssRes.text();
-            const items = xmlData.match(/<item>([\s\S]*?)<\/item>/g);
-            if (items && items.length > 0) {
-                let finalResult = "[APNA SYSTEM - LIVE NEWS]:\n\n";
-                for (let i = 0; i < Math.min(3, items.length); i++) {
-                    const titleMatch = items[i].match(/<title>(.*?)<\/title>/);
-                    if (titleMatch) {
-                        let cleanTitle = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1');
-                        finalResult += `👉 ${cleanTitle}\n`;
-                    }
-                }
-                return finalResult;
+        console.log('[SEARCH] 🚀 Seedha Nexus Browser par ja raha hai...');
+        
+        const res = await fetch(`${NEXUS_BROWSER_URL}/search?q=${encodeURIComponent(query)}`);
+        
+        if (res.ok) {
+            const data = await res.json();
+            
+            if (data.results && data.results.length > 0) {
+                let resultText = data.results.slice(0, 3).map(i => {
+                    return `Title: ${i.title || "No Title"}\nInfo: ${i.snippet || "No Info"}`;
+                }).join('\n\n');
+                
+                // Yeh tag saboot hai ki data sirf aapke browser se aaya hai
+                return `[100% APNE BROWSER SE AAYA DATA 🚀]:\n\n${resultText}`;
+            } else {
+                return "[APNA BROWSER]: Engine mast chala, par is query ka koi result nahi mila.";
             }
+        } else {
+            console.log(`[WARNING] HTTP Error: ${res.status}`);
+            return `[BROWSER ERROR]: Apne engine tak baat nahi pahunchi. Status Code: ${res.status}`;
         }
-    } catch (e) {}
-
-    return "Boss, browser engine tak request nahi pahunch payi.";
+    } catch (e) { 
+        console.log(`[WARNING] Failed: ${e.message}`);
+        return `[BROWSER FAILED]: Engine offline hai ya connect nahi ho raha. Error: ${e.message}`; 
+    }
 };
-
-// Formatting helper
-function formatResults(items, source) {
-    if (!items || items.length === 0) return "Kuch nahi mila.";
-    let text = items.slice(0, 3).map(i => {
-        let title = i.title || i.name || "Title nahi mila";
-        let info = i.snippet || i.content || "Info nahi mili";
-        return `Title: ${title}\nInfo: ${info}`;
-    }).join('\n\n');
-    return `[${source}]:\n${text}`;
-}
