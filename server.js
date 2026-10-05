@@ -1,6 +1,28 @@
 const express = require('express');
 const fs = require('fs');
 const vm = require('vm'); 
+const path = require('path');
+
+// --- DYNAMIC PLUGIN LOADER START ---
+const toolsDir = path.join(__dirname, 'api_tools');
+
+if (!fs.existsSync(toolsDir)) {
+    fs.mkdirSync(toolsDir);
+}
+
+global.activeTools = {}; 
+fs.readdirSync(toolsDir).forEach(file => {
+    if (file.endsWith('.js')) {
+        const toolName = file.split('.')[0];
+        try {
+            global.activeTools[toolName] = require(path.join(toolsDir, file));
+            console.log(`[SYSTEM] Plugin Loaded Successfully: ${toolName} 🔌`);
+        } catch (err) {
+            console.log(`[WARNING] Failed to load plugin ${toolName}: ${err.message}.`);
+        }
+    }
+});
+// --- DYNAMIC PLUGIN LOADER END ---
 
 const app = express();
 
