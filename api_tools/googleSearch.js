@@ -1,31 +1,14 @@
-
-// MASTER SEARCH TOOL - WATERFALL SYSTEM (Fallback Routing)
+// MASTER SEARCH TOOL - APNA KHUD KA SYSTEM + API FALLBACK
 module.exports = async function(query) {
     console.log(`[SYSTEM] Search command received: ${query}`);
 
-    // Yahan hum future mein apni API keys daalenge
-    const GOOGLE_API_KEY = ''; 
-    const GOOGLE_CX_ID = ''; 
-    const TAVILY_API_KEY = '';
-    const SERPAPI_KEY = '';
+    // Baad mein jab man kare, yahan API key daal denge
+    const TAVILY_API_KEY = ''; 
 
-    // --- LEVEL 1: Google Official API ---
-    if (GOOGLE_API_KEY && GOOGLE_CX_ID) {
-        try {
-            console.log('[SEARCH] Level 1: Google Official API try kar raha hoon...');
-            const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_CX_ID}&q=${encodeURIComponent(query)}`;
-            const res = await fetch(url);
-            if (res.ok) {
-                const data = await res.json();
-                return formatResults(data.items, "Google Official");
-            }
-        } catch (e) { console.log('[WARNING] Level 1 Failed.'); }
-    }
-
-    // --- LEVEL 2: Tavily API ---
+    // --- LEVEL 1: Tavily API (Abhi band hai kyunki key nahi hai) ---
     if (TAVILY_API_KEY) {
         try {
-            console.log('[SEARCH] Level 2: Tavily API try kar raha hoon...');
+            console.log('[SEARCH] Level 1: API try kar raha hoon...');
             const res = await fetch('https://api.tavily.com/search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -33,48 +16,64 @@ module.exports = async function(query) {
             });
             if (res.ok) {
                 const data = await res.json();
-                return formatResults(data.results, "Tavily");
+                return formatResults(data.results, "Tavily API");
             }
-        } catch (e) { console.log('[WARNING] Level 2 Failed.'); }
+        } catch (e) { console.log('[WARNING] API Failed.'); }
     }
 
-    // --- LEVEL 3 & 4: Unlimited Free Jugaad (Human Spoofing) ---
-    // Agar upar ki keys nahi hain ya limits khatam ho gayi hain, toh yeh chalega
+    // --- LEVEL 2: APNA KHUD KA SYSTEM (Unblockable RSS / Wiki) ---
+    console.log('[SEARCH] Level 2: Apna khud ka Open Web System try kar raha hoon...');
     try {
-        console.log('[SEARCH] Level 4: Unlimited Free (Human Mode) try kar raha hoon...');
-        
-        // "Bhes Badalna" - Google ko lagega asli insaan Windows/Chrome chala raha hai
-        const humanHeaders = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5"
-        };
+        // 1. Pehle hum Open News RSS check karenge (News ke liye best)
+        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
+        const rssRes = await fetch(rssUrl);
 
-        // Note: Direct Google fetch ko kabhi-kabhi block kar deta hai, 
-        // isliye hum backup search engine (DuckDuckGo HTML) use kar rahe hain jo block nahi karta
-        const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-        const res = await fetch(url, { headers: humanHeaders });
-        
-        if (res.ok) {
-            const html = await res.text();
-            // Basic HTML scraping (Title aur description nikalna)
-            const snippetMatch = html.match(/<a class="result__snippet[^>]*>(.*?)<\/a>/gi);
-            if (snippetMatch && snippetMatch.length > 0) {
-                // HTML tags saaf karke AI ko dena
-                const cleanText = snippetMatch.slice(0, 3).map(tag => tag.replace(/(<([^>]+)>)/gi, "")).join('\n\n');
-                return `[LIVE WEB RESULTS (Unlimited)]:\n${cleanText}`;
+        if (rssRes.ok) {
+            const xmlData = await rssRes.text();
+            
+            // XML se sirf Title nikalne ka jadoo
+            const items = xmlData.match(/<item>([\s\S]*?)<\/item>/g);
+            
+            if (items && items.length > 0) {
+                let finalResult = "[APNA SYSTEM - LIVE NEWS]:\n\n";
+                // Top 3 news nikalenge
+                for (let i = 0; i < Math.min(3, items.length); i++) {
+                    const titleMatch = items[i].match(/<title>(.*?)<\/title>/);
+                    if (titleMatch) {
+                        let cleanTitle = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1');
+                        finalResult += `👉 ${cleanTitle}\n`;
+                    }
+                }
+                return finalResult;
             }
         }
-    } catch (e) { 
-        console.log(`[ERROR] Unlimited Mode Failed: ${e.message}`); 
+        
+        // 2. Agar news mein kuch nahi mila, toh Wikipedia API (100% Free & Open)
+        console.log('[SEARCH] News nahi mili, Wikipedia check kar raha hoon...');
+        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&namespace=0&format=json`;
+        const wikiRes = await fetch(wikiUrl);
+        
+        if (wikiRes.ok) {
+            const wikiData = await wikiRes.json();
+            if (wikiData[1] && wikiData[1].length > 0) {
+                let finalResult = "[APNA SYSTEM - WIKIPEDIA]:\n\n";
+                for (let i = 0; i < wikiData[1].length; i++) {
+                    finalResult += `👉 Title: ${wikiData[1][i]}\nInfo: ${wikiData[2][i]}\n\n`;
+                }
+                return finalResult;
+            }
+        }
+
+    } catch (e) {
+        console.log(`[ERROR] Apna System fail hua: ${e.message}`);
     }
 
-    return "Boss, sabhi search raste band hain ya internet error hai.";
+    return "Boss, apna backup system aur APIs dono ko kuch nahi mila.";
 };
 
-// Helper function result set karne ke liye
+// Formatting helper
 function formatResults(items, source) {
     if (!items || items.length === 0) return "Kuch nahi mila.";
-    let text = items.slice(0, 3).map(i => `Title: ${i.title || i.name}\nInfo: ${i.snippet || i.content}`).join('\n\n');
-    return `[LIVE WEB RESULTS (${source})]:\n${text}`;
+    let text = items.slice(0, 3).map(i => `Title: ${i.title || i.name}\nInfo: ${i.content || i.snippet}`).join('\n\n');
+    return `[${source}]:\n${text}`;
 }
