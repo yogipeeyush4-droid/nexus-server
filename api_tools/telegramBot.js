@@ -1,3 +1,5 @@
+startBot();
+
 // telegramBot.js - Telegram to NexusForge Server Bridge
 const TELEGRAM_TOKEN = "8473410659:AAH2Ww7vSS_vAWwJai2-F-nORQaq_3mQW4";
 const RENDER_API_URL = "https://nexus-server-4dbv.onrender.com/api/swarm";
