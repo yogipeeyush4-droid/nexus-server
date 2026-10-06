@@ -4,6 +4,9 @@ const fs = require('fs');
 const vm = require('vm'); 
 const path = require('path');
 
+// 👇 Yahan humne aapke tool ko import kiya hai
+const { googleSearch } = require('./api_tools/googleSearch.js');
+
 const app = express();
 
 app.use((req, res, next) => {
@@ -40,7 +43,19 @@ app.post('/api/swarm', async (req, res) => {
   const safeCommand = command || "Hello";
 
   try {
-    let systemPrompt = `You are NexusManager. Connected to external JSON memory: ${JSON.stringify(aiMemory.learnedConcepts)}.`;
+    let liveData = "No live data needed for this query.";
+    
+    // 👇 MAGIC BRIDGE: Agar command mein search, live ya rate hai, toh aapka tool chalega
+    const cmdLower = safeCommand.toLowerCase();
+    if (cmdLower.includes('search') || cmdLower.includes('live') || cmdLower.includes('rate') || cmdLower.includes('sone')) {
+        console.log("🔍 Live data ki request aayi, Browser Engine ko bhej rahe hain...");
+        liveData = await googleSearch(safeCommand);
+    }
+
+    // 👇 AI ke dimaag (prompt) mein live data add kar diya taaki wo answer de sake
+    let systemPrompt = `You are NexusManager. Connected to external JSON memory: ${JSON.stringify(aiMemory.learnedConcepts)}.
+    Live Internet Data from Browser Engine: ${JSON.stringify(liveData)}.
+    Answer the user's command strictly based on this live data if available.`;
       
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
