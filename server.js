@@ -4,7 +4,7 @@ const fs = require('fs');
 const vm = require('vm'); 
 const path = require('path');
 
-// 👇 Yahan humne aapke tool ko import kiya hai
+// googleSearch tool ko import kiya
 const { googleSearch } = require('./api_tools/googleSearch.js');
 
 const app = express();
@@ -45,14 +45,14 @@ app.post('/api/swarm', async (req, res) => {
   try {
     let liveData = "No live data needed for this query.";
     
-    // 👇 MAGIC BRIDGE: Agar command mein search, live ya rate hai, toh aapka tool chalega
+    // Agar inme se koi word aaya, toh Browser engine chalega
     const cmdLower = safeCommand.toLowerCase();
-    if (cmdLower.includes('search') || cmdLower.includes('live') || cmdLower.includes('rate') || cmdLower.includes('sone')) {
+    if (cmdLower.includes('search') || cmdLower.includes('live') || cmdLower.includes('rate') || cmdLower.includes('sone') || cmdLower.includes('gold') || cmdLower.includes('silver')) {
         console.log("🔍 Live data ki request aayi, Browser Engine ko bhej rahe hain...");
         liveData = await googleSearch(safeCommand);
     }
 
-    // 👇 AI ke dimaag (prompt) mein live data add kar diya taaki wo answer de sake
+    // AI ko live data pass karna
     let systemPrompt = `You are NexusManager. Connected to external JSON memory: ${JSON.stringify(aiMemory.learnedConcepts)}.
     Live Internet Data from Browser Engine: ${JSON.stringify(liveData)}.
     Answer the user's command strictly based on this live data if available.`;
