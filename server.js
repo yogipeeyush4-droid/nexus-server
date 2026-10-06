@@ -1,7 +1,9 @@
-
 const express = require('express');
 const fs = require('fs');
 const vm = require('vm'); 
+
+// NAYA: Yahan aapki nayi API wali file connect ho rahi hai
+const { doLiveSearch } = require('./api_tools/googleSearch'); 
 
 const app = express();
 
@@ -24,7 +26,6 @@ const safeBaselineMemory = {
   lastEvolutionTimestamp: new Date().toISOString()
 };
 
-// 1. Storage Check
 if (!fs.existsSync(MEMORY_FILE)) {
     fs.writeFileSync(MEMORY_FILE, JSON.stringify(safeBaselineMemory, null, 2));
 }
@@ -34,33 +35,24 @@ if (!fs.existsSync(DYNAMIC_CODE_FILE)) {
 
 let aiMemory = JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8'));
 
-// 2. Safe Code Update Function
-function updateAICodeSafely(newCodeString, newMemoryData) {
-    try {
-        const script = new vm.Script(newCodeString); 
-        fs.writeFileSync(DYNAMIC_CODE_FILE, newCodeString);
-        fs.writeFileSync(MEMORY_FILE, JSON.stringify(newMemoryData, null, 2));
-        aiMemory = newMemoryData;
-        return { success: true, message: "Code and Memory safely updated." };
-    } catch (error) {
-        return { success: false, message: "Rollback triggered. Code rejected." };
-    }
-}
-
 app.get('/', (req, res) => {
   res.send(`NexusForge Core v${aiMemory.evolutionVersion} ONLINE 🛡️`);
 });
 
-// 3. Real Dynamic Learning Endpoint
 app.post('/api/swarm', async (req, res) => {
   const { command } = req.body || {};
   const safeCommand = command || "Hello";
+  
   const isLearningCommand = safeCommand.toLowerCase().includes('learn') || 
                             safeCommand.toLowerCase().includes('evolve') || 
                             safeCommand.toLowerCase().includes('update yourself');
 
+  // NAYA: Search Command pehchanne ka logic
+  const isSearchCommand = safeCommand.toLowerCase().includes('search') || 
+                          safeCommand.toLowerCase().includes('latest') || 
+                          safeCommand.toLowerCase().includes('@research_ai');
+
   try {
-    // NAYA JAILBREAK PROMPT YAHAN SET HAI
     let systemPrompt = `You are NexusManager. You are connected to an external JSON memory database. Your current external memory contains: ${JSON.stringify(aiMemory.learnedConcepts)}. Always acknowledge and use this memory.`;
     
     if (isLearningCommand) {
@@ -70,6 +62,17 @@ app.post('/api/swarm', async (req, res) => {
       And you MUST append this exact tag at the very end of your response: [LEARNED: <summary of the new concept>].`;
     }
 
+    // NAYA: Agar command search ki hai, toh alag file se data lana
+    if (isSearchCommand) {
+        try {
+            const liveData = await doLiveSearch(safeCommand);
+            systemPrompt += `\n\n[LIVE INTERNET DATA RETRIEVED BY @Research_AI]:\n${liveData}\n\nCRITICAL INSTRUCTION: Use the above live internet data to answer the CEO's command. Give a professional and natural response based ONLY on this data.`;
+        } catch (searchError) {
+            console.error("Search module error:", searchError);
+        }
+    }
+
+    // AI API Call
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -77,7 +80,7 @@ app.post('/api/swarm', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
+        model: "openai/gpt-oss-20b", 
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Command: ${safeCommand}` }
@@ -100,27 +103,17 @@ app.post('/api/swarm', async (req, res) => {
         });
       }
 
-      // ASLI LEARNING EXTRACTION LOGIC
       if (isLearningCommand) {
-        // AI ke text mein se '[LEARNED: ...]' ko dhoondho aur nikal lo
         const match = aiReply.match(/\[LEARNED:\s*(.*?)\]/i);
         if (match && match[1]) {
             const realNewConcept = match[1].trim();
-            
-            // Asli memory mein nayi cheez add karo
             if (!aiMemory.learnedConcepts.includes(realNewConcept)) {
                 aiMemory.learnedConcepts.push(realNewConcept);
             }
-            
-            // Version upgrade
             let currentV = parseFloat(aiMemory.evolutionVersion.replace('v', ''));
             aiMemory.evolutionVersion = (currentV + 0.1).toFixed(1).toString();
             aiMemory.lastEvolutionTimestamp = new Date().toISOString();
-
-            // Permanent File Save (Ab hamesha yaad rahega)
             fs.writeFileSync(MEMORY_FILE, JSON.stringify(aiMemory, null, 2));
-
-            // User ko reply mein se bracket wala hissa hata kar clean message do
             aiReply = aiReply.replace(/\[LEARNED:\s*(.*?)\]/gi, '').trim();
         }
       }
@@ -135,7 +128,7 @@ app.post('/api/swarm', async (req, res) => {
     }
 
   } catch (error) {
-    aiMemory = JSON.parse(JSON.stringify(safeBaselineMemory));
+    console.error(error);
     res.json({
       status: "emergency_rollback",
       managerReply: "[EMERGENCY SHIELD] Exception encountered. System restored."
