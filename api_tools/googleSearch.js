@@ -99,10 +99,11 @@ async function engine_Tavily(query) {
 }
 
 // ==========================================
-// MASTER FALLBACK LOOP (God-Mode Active)
+// MASTER FALLBACK LOOP (God-Mode Active - Reordered)
 // ==========================================
 async function doLiveSearch(query) {
-    const searchEngines = [engine_RSS, engine_Wikipedia, engine_GoogleScraper, engine_Serper, engine_Tavily];
+    // ⚡ Serper aur Google Scraper ko aage kar diya hai taaki bhav/rate wale sawal turant pakde jayein
+    const searchEngines = [engine_Serper, engine_GoogleScraper, engine_Wikipedia, engine_RSS, engine_Tavily];
 
     for (let i = 0; i < searchEngines.length; i++) {
         try {
