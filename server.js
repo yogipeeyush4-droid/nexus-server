@@ -47,10 +47,17 @@ app.post('/api/swarm', async (req, res) => {
                             safeCommand.toLowerCase().includes('evolve') || 
                             safeCommand.toLowerCase().includes('update yourself');
 
-  // NAYA: Search Command pehchanne ka logic
-  const isSearchCommand = safeCommand.toLowerCase().includes('search') || 
-                          safeCommand.toLowerCase().includes('latest') || 
-                          safeCommand.toLowerCase().includes('@research_ai');
+  // 🔥 UPDATED: Smart Search Trigger (Ab yeh har tarah ke sawal ko pakad lega)
+  const lowerCmd = safeCommand.toLowerCase();
+  const isSearchCommand = lowerCmd.includes('search') || 
+                          lowerCmd.includes('latest') || 
+                          lowerCmd.includes('@research_ai') ||
+                          lowerCmd.includes('bhav') || 
+                          lowerCmd.includes('price') || 
+                          lowerCmd.includes('news') || 
+                          lowerCmd.includes('kya hai') ||
+                          lowerCmd.includes('aaj') ||
+                          lowerCmd.includes('rate');
 
   try {
     let systemPrompt = `You are NexusManager. You are connected to an external JSON memory database. Your current external memory contains: ${JSON.stringify(aiMemory.learnedConcepts)}. Always acknowledge and use this memory.`;
