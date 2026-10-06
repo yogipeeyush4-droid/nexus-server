@@ -1,10 +1,10 @@
 const Parser = require('rss-parser');
 const parser = new Parser();
-const google = require('googlethis'); // NAYA: Free Google Scraper engine jud gaya
+const google = require('googlethis'); 
 
-// Boss, yahan par aapko apni free API keys daalni hain
-const SERPER_API_KEY = "YAHAN_SERPER_KEY_DALIYE"; // serper.dev se milegi
-const TAVILY_API_KEY = "YAHAN_TAVILY_KEY_DALIYE"; // tavily.com se milegi
+// ✅ Boss ki Asli API Keys (Locked & Active)
+const SERPER_API_KEY = "2696a75bf385577ff2b4798428dd24de8ce5ee51";
+const TAVILY_API_KEY = "Tvly-dev-VpI8I-3XO9moaJNyUtvTz1tz5pVAHbWbpJHGxyxBXBngbCpv";
 
 // ==========================================
 // ENGINE 0: RSS FEEDS (100% Free - News Ke Liye)
@@ -60,11 +60,9 @@ async function engine_GoogleScraper(query) {
 }
 
 // ==========================================
-// ENGINE 3: SERPER.DEV (Fast Google Search API - 2500 Free Limit)
+// ENGINE 3: SERPER.DEV (Fast Google Search API)
 // ==========================================
 async function engine_Serper(query) {
-    if (SERPER_API_KEY === "YAHAN_SERPER_KEY_DALIYE") throw new Error("Serper Key missing.");
-    
     console.log("[Engine 3] Serper API se Google search kar raha hoon...");
     const response = await fetch('https://google.serper.dev/search', {
         method: 'POST',
@@ -83,11 +81,9 @@ async function engine_Serper(query) {
 }
 
 // ==========================================
-// ENGINE 4: TAVILY AI (Premium AI Search - 1000 Free Limit)
+// ENGINE 4: TAVILY AI (Premium AI Search)
 // ==========================================
 async function engine_Tavily(query) {
-    if (TAVILY_API_KEY === "YAHAN_TAVILY_KEY_DALIYE") throw new Error("Tavily Key missing.");
-    
     console.log("[Engine 4] Tavily AI se search kar raha hoon...");
     const response = await fetch('https://api.tavily.com/search', {
         method: 'POST',
@@ -103,10 +99,9 @@ async function engine_Tavily(query) {
 }
 
 // ==========================================
-// MASTER FALLBACK LOOP (Crash-Proof System)
+// MASTER FALLBACK LOOP (God-Mode Active)
 // ==========================================
 async function doLiveSearch(query) {
-    // Priority List: Pehle RSS -> Wiki -> Free Google -> Serper -> Tavily
     const searchEngines = [engine_RSS, engine_Wikipedia, engine_GoogleScraper, engine_Serper, engine_Tavily];
 
     for (let i = 0; i < searchEngines.length; i++) {
@@ -114,11 +109,11 @@ async function doLiveSearch(query) {
             const data = await searchEngines[i](query);
             if (data) {
                 console.log(`✅ Success! Data Engine ${i} se mil gaya.`);
-                return data; // Jaise hi data milega, loop ruk jayega
+                return data; 
             }
         } catch (error) {
-            console.log(`⚠️ Engine ${i} Fail hua ya skip hua. Reason: ${error.message}. Agle engine par ja raha hoon...`);
-            continue; // Fail hone par bina crash hue agle engine par jump
+            console.log(`⚠️ Engine ${i} Fail hua ya skip hua. Agle engine par ja raha hoon...`);
+            continue; 
         }
     }
     
