@@ -147,3 +147,5 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log("Real Self-Healing Memory Core listening on port " + PORT);
 });
+
+require('./api_tools/telegramBot.js');
