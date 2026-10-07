@@ -395,8 +395,6 @@ app.post('/api/swarm', authGuard, async (req, res) => {
   const userCmd = (command || 'Hello').toString().slice(0, 4000);
   const low = userCmd.toLowerCase();
 
-  const isLearning = /\b(learn|seekho|sikh|yaad rakh|remember|evolve)\b/i.test(low);
-  
   // 🧠 SMART AI INTENT ENGINE (No Spelling Required - Fully Integrated)
   let isSearch = false;
   try {
@@ -427,6 +425,7 @@ app.post('/api/swarm', authGuard, async (req, res) => {
     const mem = aiMemory.read();
     const skillList = skills.list();
 
+    // 🔥 FIX YAHAN HUA HAI: Ab AI apni native JSON skill nahi chalayegi!
     let sys = `You are NexusForge, a self-evolving autonomous AI for your owner (CEO).
 Your job: help the owner AND grow more powerful over time by learning new skills and modifying your own code.
 
@@ -457,7 +456,9 @@ CURRENT STATE:
 6) SHELL COMMAND: [EXECUTE: command]
 7) RELOAD SERVER: [RELOAD_SERVER] (Use this if you patched server.js)
 
-CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
+CRITICAL RULES:
+1. Reply concisely. If asked to learn, write actual code for the skill.
+2. STRICTLY PROHIBITED: DO NOT use native JSON tool calling or function calling formats. You MUST ONLY use the plain-text square bracket tags defined above (like [EXECUTE: command] or [CREATE_SKILL: name]).`;
 
     if (isSearch) {
       try {
@@ -545,6 +546,7 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
       .replace(/\[RELOAD_SERVER\]/gi, '')
       .trim();
 
+    // 🔥 ERROR 400 FIX: Agar message khali hai, to usme yeh line daal do
     if (!cleanReply) cleanReply = "[Autonomous Action Completed]";
 
     if (actionLog.length) cleanReply += `\n\n━━━ ⚙ ACTIONS ━━━\n${actionLog.join('\n')}`;
