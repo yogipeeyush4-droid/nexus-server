@@ -241,19 +241,25 @@ function registerRoutes(app) {
   app.post('/api/swarm', async (req, res) => {
     try {
       const { command } = req.body;
-      const result = await taskAgent.execute(command || '');
-      
-      let cleanReply = "";
       const cmdText = (command || '').toLowerCase().trim();
 
-      // 1. Strict Greeting Check: Sirf 'hi' ya 'hello' par hi welcome message aayega
-      if (cmdText === 'hi' || cmdText === 'hello') {
+      let cleanReply = "";
+
+      // 1. Expanded Greeting & Conversational Check
+      const greetings = ['hi', 'hello', 'hey', 'namaste', 'good morning', 'good evening'];
+      const howAreYou = ['kese ho', 'kaise ho', 'kya haal', 'how are you'];
+
+      if (greetings.includes(cmdText)) {
           cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
       } 
+      else if (howAreYou.some(phrase => cmdText.includes(phrase))) {
+          cleanReply = "Main bilkul theek hoon Boss! Aap batayein, aaj kya kaam karna hai?";
+      }
       else {
-          // 2. Baaki kisi bhi command ke liye (jaise 'gold rate') actual response process hoga
-          let parsedData = result;
+          // 2. Baaki kisi bhi command ke liye actual taskAgent call
+          const result = await taskAgent.execute(command || '');
           
+          let parsedData = result;
           if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
               try {
                   parsedData = JSON.parse(result);
@@ -268,6 +274,9 @@ function registerRoutes(app) {
                   cleanReply = parsedData.reply;
               } else if (parsedData.message) {
                   cleanReply = parsedData.message;
+              } else if (parsedData.intent === 'help') {
+                  // Agar bot ko samajh nahi aaya, toh 'help' intent ka matlab 'command nahi mila' hai
+                  cleanReply = "Main samajh nahi paya Boss. Kripya specific command batayein ya 'help' type karein.";
               } else {
                   cleanReply = `[Task Analyzed: ${parsedData.intent || 'Action'}] Backend mein command chala di gayi hai.`;
               }
