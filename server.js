@@ -516,7 +516,10 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
       .replace(/\[RELOAD_SERVER\]/gi, '')
       .trim();
 
-    if (actionLog.length) cleanReply += `\n\n━━━ ⚙️️ ACTIONS ━━━\n${actionLog.join('\n')}`;
+    // 🔥 ERROR 400 FIX: Agar message khali hai, to usme yeh line daal do
+    if (!cleanReply) cleanReply = "[Autonomous Action Completed]";
+
+    if (actionLog.length) cleanReply += `\n\n━━━ ⚙ ACTIONS ━━━\n${actionLog.join('\n')}`;
 
     conversations.add(userId, 'user', userCmd);
     conversations.add(userId, 'assistant', cleanReply);
