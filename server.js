@@ -180,7 +180,7 @@ function createApp() {
 
   // Security headers
   app.use(helmet({
-    contentSecurityPolicy: false, // API server — disable CSP
+    contentSecurityPolicy: false, 
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
 
@@ -230,7 +230,6 @@ function createApp() {
 
 // ============ ROUTES ============
 function registerRoutes(app) {
-  // ---------- HEALTH ----------
   const healthHandler = (req, res) => {
     const mem = process.memoryUsage();
     res.json({
@@ -249,17 +248,51 @@ function registerRoutes(app) {
     });
   };
 
-  // ROUTE FIXED: Changed from /task to /api/swarm to match your frontend requests
+  // 🔥 YAHAN FIX KIYA HAI: JSON Parser add kar diya frontend ke liye
   app.post('/api/swarm', async (req, res) => {
     try {
       const { command } = req.body;
-      const result = await taskAgent.execute(
-        command || ''
-      );
-      res.json(result);
+      const result = await taskAgent.execute(command || '');
+      
+      let cleanReply = "";
+
+      // Logic: Convert Object or JSON String into Frontend-readable Text
+      if (typeof result === 'object' && result !== null) {
+         if (result.intent === 'help' || result.type === 'help' || command.toLowerCase().trim() === 'hi') {
+             cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
+         } else if (result.managerReply) {
+             cleanReply = result.managerReply;
+         } else {
+             cleanReply = `[System Task Analyzed: ${result.intent || 'Success'}] Aapki command execute ho gayi hai.`;
+         }
+      } 
+      else if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
+         try {
+             const parsedData = JSON.parse(result);
+             if (parsedData.intent === 'help' || parsedData.type === 'help' || command.toLowerCase().trim() === 'hi') {
+                 cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
+             } else if (parsedData.managerReply) {
+                 cleanReply = parsedData.managerReply;
+             } else {
+                 cleanReply = `[System Task Analyzed: ${parsedData.intent || 'Success'}] Aapki command execute ho gayi hai.`;
+             }
+         } catch(e) {
+             cleanReply = result;
+         }
+      } else {
+         cleanReply = String(result);
+      }
+
+      // Format matching your Android UI requirement
+      res.json({
+        status: 'success',
+        managerReply: cleanReply || "[Autonomous Action Completed]"
+      });
+
     } catch (err) {
       res.status(500).json({
-        error: err.message
+        status: 'error',
+        managerReply: `[EMERGENCY] ${err.message}`
       });
     }
   });
@@ -267,7 +300,6 @@ function registerRoutes(app) {
   app.get('/health', healthHandler);
   app.get('/api/v1/health', healthHandler);
 
-  // ---------- LIVENESS / READINESS ----------
   app.get('/live', (req, res) => res.json({ ok: true }));
   app.get('/ready', (req, res) => {
     try {
@@ -278,7 +310,6 @@ function registerRoutes(app) {
     }
   });
 
-  // ---------- ANALYZE (rate limited) ----------
   const analyzeLimiter = rateLimit({
     windowMs: CONFIG.rateLimit.windowMs,
     max: CONFIG.rateLimit.analyze,
@@ -319,7 +350,6 @@ function registerRoutes(app) {
     })
   );
 
-  // ---------- MEMORY ----------
   app.get(
     '/api/v1/memory',
     apiKeyAuth,
@@ -381,7 +411,6 @@ function registerRoutes(app) {
     })
   );
 
-  // ---------- SYSTEM ----------
   app.get('/api/v1/metrics', apiKeyAuth, (req, res) => {
     res.json({ ok: true, ...metrics.snapshot() });
   });
@@ -405,18 +434,15 @@ function startWorker() {
   const app = createApp();
   registerRoutes(app);
 
-  // 404 + error (always last)
   app.use(notFoundHandler);
   app.use(errorHandler);
 
   const server = http.createServer(app);
 
-  // -------- SOCKET TIMEOUTS --------
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
   server.requestTimeout = 30000;
 
-  // -------- GRACEFUL SHUTDOWN --------
   let shuttingDown = false;
   const shutdown = (signal) => {
     if (shuttingDown) return;
@@ -446,7 +472,6 @@ function startWorker() {
     logger.error('unhandledRejection', { reason: String(reason) });
   });
 
-  // -------- START --------
   server.listen(CONFIG.port, () => {
     logger.info(
       `🧠 AI Brain running on port ${CONFIG.port} [pid ${process.pid}] [${CONFIG.env}]`
@@ -456,7 +481,6 @@ function startWorker() {
   return server;
 }
 
-// ============ CLUSTER MODE ============
 if (CONFIG.isProd && CONFIG.workers !== 1) {
   const numWorkers = CONFIG.workers || Math.min(os.cpus().length, 4);
 
