@@ -126,7 +126,7 @@ function requestIdMiddleware(req, res, next) {
 
 // ============ API KEY AUTH ============
 function apiKeyAuth(req, res, next) {
-  if (!CONFIG.apiKey) return next(); // disabled if no key set
+  if (!CONFIG.apiKey) return next(); 
 
   const provided =
     req.headers['x-api-key'] ||
@@ -175,16 +175,13 @@ const asyncHandler = (fn) => (req, res, next) =>
 function createApp() {
   const app = express();
 
-  // Trust proxy (for correct IP behind nginx/heroku)
   if (CONFIG.trustProxy) app.set('trust proxy', 1);
 
-  // Security headers
   app.use(helmet({
     contentSecurityPolicy: false, 
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
 
-  // CORS
   app.use(cors({
     origin: CONFIG.corsOrigin === '*' ? true : CONFIG.corsOrigin.split(','),
     credentials: true,
@@ -192,22 +189,15 @@ function createApp() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-Id'],
   }));
 
-  // Compression
   app.use(compression());
-
-  // Body parser
   app.use(express.json({ limit: CONFIG.bodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: CONFIG.bodyLimit }));
-
-  // Request ID
   app.use(requestIdMiddleware);
 
-  // HTTP logging
   app.use(morgan(CONFIG.isProd ? 'combined' : 'dev', {
     stream: { write: (msg) => logger.info(msg.trim()) },
   }));
 
-  // Metrics
   app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
@@ -216,7 +206,6 @@ function createApp() {
     next();
   });
 
-  // Global rate limit
   app.use(rateLimit({
     windowMs: CONFIG.rateLimit.windowMs,
     max: CONFIG.rateLimit.max,
@@ -248,42 +237,46 @@ function registerRoutes(app) {
     });
   };
 
-  // 🔥 YAHAN FIX KIYA HAI: JSON Parser add kar diya frontend ke liye
+  // 🔥 100% FIXED SWARM ROUTE
   app.post('/api/swarm', async (req, res) => {
     try {
       const { command } = req.body;
       const result = await taskAgent.execute(command || '');
       
       let cleanReply = "";
+      const cmdText = (command || '').toLowerCase().trim();
 
-      // Logic: Convert Object or JSON String into Frontend-readable Text
-      if (typeof result === 'object' && result !== null) {
-         if (result.intent === 'help' || result.type === 'help' || command.toLowerCase().trim() === 'hi') {
-             cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
-         } else if (result.managerReply) {
-             cleanReply = result.managerReply;
-         } else {
-             cleanReply = `[System Task Analyzed: ${result.intent || 'Success'}] Aapki command execute ho gayi hai.`;
-         }
+      // 1. Strict Greeting Check: Sirf 'hi' ya 'hello' par hi welcome message aayega
+      if (cmdText === 'hi' || cmdText === 'hello') {
+          cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
       } 
-      else if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
-         try {
-             const parsedData = JSON.parse(result);
-             if (parsedData.intent === 'help' || parsedData.type === 'help' || command.toLowerCase().trim() === 'hi') {
-                 cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
-             } else if (parsedData.managerReply) {
-                 cleanReply = parsedData.managerReply;
-             } else {
-                 cleanReply = `[System Task Analyzed: ${parsedData.intent || 'Success'}] Aapki command execute ho gayi hai.`;
-             }
-         } catch(e) {
-             cleanReply = result;
-         }
-      } else {
-         cleanReply = String(result);
+      else {
+          // 2. Baaki kisi bhi command ke liye (jaise 'gold rate') actual response process hoga
+          let parsedData = result;
+          
+          if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
+              try {
+                  parsedData = JSON.parse(result);
+              } catch(e) {} // Agar parse fail hua, toh original string hi use hogi
+          }
+
+          // 3. Object me se asli answer nikalna
+          if (typeof parsedData === 'object' && parsedData !== null) {
+              if (parsedData.managerReply) {
+                  cleanReply = parsedData.managerReply;
+              } else if (parsedData.reply) {
+                  cleanReply = parsedData.reply;
+              } else if (parsedData.message) {
+                  cleanReply = parsedData.message;
+              } else {
+                  cleanReply = `[Task Analyzed: ${parsedData.intent || 'Action'}] Backend mein command chala di gayi hai.`;
+              }
+          } else {
+              // Agar answer direct text mein aaya hai
+              cleanReply = String(result);
+          }
       }
 
-      // Format matching your Android UI requirement
       res.json({
         status: 'success',
         managerReply: cleanReply || "[Autonomous Action Completed]"
