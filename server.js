@@ -396,7 +396,32 @@ app.post('/api/swarm', authGuard, async (req, res) => {
   const low = userCmd.toLowerCase();
 
   const isLearning = /\b(learn|seekho|sikh|yaad rakh|remember|evolve)\b/i.test(low);
-  const isSearch   = /\b(search|latest|news|bhav|price|rate|kya hai|aaj|kab|kaun)\b/i.test(low);
+  
+  // 🧠 SMART AI INTENT ENGINE (No Spelling Required - Fully Integrated)
+  let isSearch = false;
+  try {
+    const intentCheck = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192', 
+        messages: [
+          { role: 'system', content: 'You are an intent classifier. If the user query needs live internet search (prices, news, weather, live info, current time, market rates), reply with exactly "YES". If it is a normal chat, coding, server task, or skill creation request, reply with "NO". Ignore bad grammar or spelling mistakes.' },
+          { role: 'user', content: userCmd }
+        ],
+        temperature: 0,
+        max_tokens: 5
+      })
+    });
+    const intentData = await intentCheck.json();
+    const aiDecision = intentData.choices?.[0]?.message?.content || '';
+    if (aiDecision.includes('YES')) isSearch = true;
+  } catch (e) {
+    console.log('Search Intent Error:', e);
+  }
 
   try {
     const mem = aiMemory.read();
@@ -460,7 +485,6 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
       })
     });
 
-    // 🔥 YAHAN CHANGE HUA HAI: Ab Groq API ka exact lamba error pakad mein aayega
     if (!aiRes.ok) {
       const errText = await aiRes.text();
       throw new Error(`AI ${aiRes.status}: ${errText}`);
@@ -517,11 +541,10 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
     }
 
     let cleanReply = aiReply
-      .replace(/\[CREATE_SKILL:[\s\S]*?\[\/CREATE_SKILL\]/gi, '')              .replace(/\[PATCH_FILE:[\s\S]*?\[\/PATCH_FILE\]/gi, '')              .replace(/\[WRITE_FILE:[\s\S]*?\[\/WRITE_FILE\]/gi, '')              .replace(/\[RUN_SKILL:[^\]]+\](\([\s\S]*?\))?/gi, '')              .replace(/\[EXECUTE:[^\]]+\]/gi, '')              .replace(/\[LEARNED:[^\]]+\]/gi, '')
+      .replace(/\[CREATE_SKILL:[\s\S]*?\[\/CREATE_SKILL\]/gi, '')                     .replace(/\[PATCH_FILE:[\s\S]*?\[\/PATCH_FILE\]/gi, '')                     .replace(/\[WRITE_FILE:[\s\S]*?\[\/WRITE_FILE\]/gi, '')                     .replace(/\[RUN_SKILL:[^\]]+\](\([\s\S]*?\))?/gi, '')                     .replace(/\[EXECUTE:[^\]]+\]/gi, '')                     .replace(/\[LEARNED:[^\]]+\]/gi, '')
       .replace(/\[RELOAD_SERVER\]/gi, '')
       .trim();
 
-    // 🔥 ERROR 400 FIX: Agar message khali hai, to usme yeh line daal do
     if (!cleanReply) cleanReply = "[Autonomous Action Completed]";
 
     if (actionLog.length) cleanReply += `\n\n━━━ ⚙ ACTIONS ━━━\n${actionLog.join('\n')}`;
@@ -538,7 +561,7 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
 
     if (restartNeeded) {
       console.log('♻️ Restart signal received. Re-spawning in 1.5s...');
-      setTimeout(selfRestart, 1500); // ♻️ Naya restart logic yahan trigger hoga
+      setTimeout(selfRestart, 1500); 
     }
 
   } catch (e) {
