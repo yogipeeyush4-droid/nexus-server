@@ -460,7 +460,12 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
       })
     });
 
-    if (!aiRes.ok) throw new Error(`AI ${aiRes.status}`);
+    // 🔥 YAHAN CHANGE HUA HAI: Ab Groq API ka exact lamba error pakad mein aayega
+    if (!aiRes.ok) {
+      const errText = await aiRes.text();
+      throw new Error(`AI ${aiRes.status}: ${errText}`);
+    }
+    
     const data = await aiRes.json();
     let aiReply = data.choices?.[0]?.message?.content || '';
     if (!aiReply) return res.json({ status: 'empty', managerReply: '...' });
@@ -512,7 +517,7 @@ CRITICAL: Reply concisely. If asked to learn, write actual code for the skill.`;
     }
 
     let cleanReply = aiReply
-      .replace(/\[CREATE_SKILL:[\s\S]*?\[\/CREATE_SKILL\]/gi, '')       .replace(/\[PATCH_FILE:[\s\S]*?\[\/PATCH_FILE\]/gi, '')       .replace(/\[WRITE_FILE:[\s\S]*?\[\/WRITE_FILE\]/gi, '')       .replace(/\[RUN_SKILL:[^\]]+\](\([\s\S]*?\))?/gi, '')       .replace(/\[EXECUTE:[^\]]+\]/gi, '')       .replace(/\[LEARNED:[^\]]+\]/gi, '')
+      .replace(/\[CREATE_SKILL:[\s\S]*?\[\/CREATE_SKILL\]/gi, '')              .replace(/\[PATCH_FILE:[\s\S]*?\[\/PATCH_FILE\]/gi, '')              .replace(/\[WRITE_FILE:[\s\S]*?\[\/WRITE_FILE\]/gi, '')              .replace(/\[RUN_SKILL:[^\]]+\](\([\s\S]*?\))?/gi, '')              .replace(/\[EXECUTE:[^\]]+\]/gi, '')              .replace(/\[LEARNED:[^\]]+\]/gi, '')
       .replace(/\[RELOAD_SERVER\]/gi, '')
       .trim();
 
