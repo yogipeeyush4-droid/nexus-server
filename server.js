@@ -1,4 +1,3 @@
-
 const taskAgent = require('./agents/taskAgent');
 require('dotenv').config();
 
@@ -249,27 +248,21 @@ function registerRoutes(app) {
       requestId: req.id,
     });
   };
-  app.post('/task', async (req, res) => {
 
-  try {
-
-    const { command } = req.body;
-
-    const result = await taskAgent.execute(
-      command || ''
-    );
-
-    res.json(result);
-
-  } catch (err) {
-
-    res.status(500).json({
-      error: err.message
-    });
-
-  }
-
-});
+  // ROUTE FIXED: Changed from /task to /api/swarm to match your frontend requests
+  app.post('/api/swarm', async (req, res) => {
+    try {
+      const { command } = req.body;
+      const result = await taskAgent.execute(
+        command || ''
+      );
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err.message
+      });
+    }
+  });
 
   app.get('/health', healthHandler);
   app.get('/api/v1/health', healthHandler);
