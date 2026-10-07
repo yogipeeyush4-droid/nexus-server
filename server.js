@@ -1,585 +1,485 @@
+
+const taskAgent = require('./agents/taskAgent');
+require('dotenv').config();
+
 const express = require('express');
-const fs = require('fs');
+const helmet = require('helmet');
+const cors = require('cors');
+const compression = require('compression');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const cluster = require('cluster');
+const os = require('os');
+const http = require('http');
+const crypto = require('crypto');
 const path = require('path');
-const { exec, spawn } = require('child_process');
-const { doLiveSearch } = require('./api_tools/googleSearch');
+const fs = require('fs');
 
-// ═══════════════════════════════════════════════
-// ⚙️ CONFIG
-// ═══════════════════════════════════════════════
-const MEMORY_FILE       = './aiMemory.json';
-const CONVERSATION_FILE = './conversations.json';
-const SKILLS_DIR        = './skills';
-const BACKUPS_DIR       = './backups';
-const SERVER_FILE       = path.resolve(__filename);
+const projectScanner = require('./core/projectScanner');
+const selfAnalyzer = require('./core/selfAnalyzer');
+const memoryManager = require('./core/memoryManager');
 
-// ═══════════════════════════════════════════════
-// ♻️ AUTO-RESTART LOGIC (Naya Fix)
-// ═══════════════════════════════════════════════
-let activeServer; // Server instance ko track karne ke liye
-
-function selfRestart() {
-  console.log('♻️ Safely shutting down current server for restart...');
-  if (activeServer) {
-    activeServer.close(() => {
-      console.log('🚀 Spawning new server process...');
-      const child = spawn(process.argv[0], process.argv.slice(1), {
-        detached: true,
-        stdio: 'inherit'
-      });
-      child.unref();
-      process.exit(0);
-    });
-  } else {
-    process.exit(0);
-  }
-}
-
-// ═══════════════════════════════════════════════
-// 🚫 SAFETY (Sirf tabahi wali cheezein block)
-// ═══════════════════════════════════════════════
-const KILL_PATTERNS = [
-  /rm\s+-rf\s+\/(?!tmp|home\/[^/]+\/nexus)/i,
-  /sudo/i, /mkfs/i, /dd\s+if=\/dev/i,
-  /:\s*\(\)\s*\{.*\};:/,          // fork bomb
-  /curl.*\|\s*(sh|bash)/i,
-  /wget.*\|\s*(sh|bash)/i,
-  /chmod\s+777\s+\//i,
-  />\s*\/etc\/(passwd|shadow)/i,
-];
-
-function isCommandSafe(cmd) {
-  for (const p of KILL_PATTERNS) {
-    if (p.test(cmd)) return { safe: false, reason: `Blocked: ${p}` };
-  }
-  return { safe: true };
-}
-
-function executeRealCommand(command, timeoutMs = 10000) {
-  return new Promise((resolve) => {
-    const check = isCommandSafe(command);
-    if (!check.safe) return resolve({ ok: false, error: check.reason });
-    exec(command, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) return resolve({ ok: false, error: err.message, stderr });
-      resolve({ ok: true, output: stdout || 'Done.', stderr });
-    });
-  });
-}
-
-// ═══════════════════════════════════════════════
-// 💾 BACKUP SYSTEM
-// ═══════════════════════════════════════════════
-fs.mkdirSync(BACKUPS_DIR, { recursive: true });
-
-function backupFile(filePath) {
-  if (!fs.existsSync(filePath)) return null;
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = path.join(BACKUPS_DIR, stamp);
-  fs.mkdirSync(dir, { recursive: true });
-  const dest = path.join(dir, path.basename(filePath));
-  fs.copyFileSync(filePath, dest);
-  return dest;
-}
-
-// ═══════════════════════════════════════════════
-// 🧠 MEMORY (Concepts + Skills registry)
-// ═══════════════════════════════════════════════
-const baselineMemory = {
-  evolutionVersion: "3.1.0",
-  learnedConcepts: [
-    "Self-Evolving Core",
-    "Dynamic Skill Creation",
-    "Self-Code Modification",
-    "Auto Backup + Rollback",
-    "Self-Restart Capability"
-  ],
-  skills: [],   // [{ name, description, file, createdAt }]
-  lastEvolutionTimestamp: new Date().toISOString()
+// ============ CONFIG ============
+const CONFIG = {
+  port: parseInt(process.env.PORT, 10) || 3000,
+  env: process.env.NODE_ENV || 'development',
+  isProd: process.env.NODE_ENV === 'production',
+  workers: parseInt(process.env.WORKERS, 10) || 0, // 0 = auto
+  apiVersion: 'v1',
+  bodyLimit: process.env.BODY_LIMIT || '1mb',
+  corsOrigin: process.env.CORS_ORIGIN || '*',
+  apiKey: process.env.API_KEY || null,
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  shutdownTimeout: 10000,
+  rateLimit: {
+    windowMs: 60 * 1000,
+    max: 100,
+    analyze: 10,
+  },
 };
 
-if (!fs.existsSync(MEMORY_FILE))
-  fs.writeFileSync(MEMORY_FILE, JSON.stringify(baselineMemory, null, 2));
-if (!fs.existsSync(CONVERSATION_FILE))
-  fs.writeFileSync(CONVERSATION_FILE, JSON.stringify({}, null, 2));
+// ============ LOGGER ============
+const LOG_LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
+const CURRENT_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL || 'info'];
 
-class Store {
-  constructor(file) {
-    this.file = file;
-    this.data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    this._timer = null;
-  }
-  read() { return this.data; }
-  write(newData) {
-    this.data = newData;
-    clearTimeout(this._timer);
-    this._timer = setTimeout(() => {
-      fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
-    }, 200);
-  }
-  bumpVersion() {
-    const v = parseFloat(this.data.evolutionVersion) + 0.1;
-    this.data.evolutionVersion = v.toFixed(1);
-    this.data.lastEvolutionTimestamp = new Date().toISOString();
-    this.write(this.data);
-    return this.data.evolutionVersion;
-  }
-}
+const logger = {
+  _write(level, msg, meta) {
+    if (LOG_LEVELS[level] > CURRENT_LEVEL) return;
+    const entry = {
+      time: new Date().toISOString(),
+      level,
+      msg,
+      pid: process.pid,
+      ...(meta && { meta }),
+    };
+    const out = CONFIG.isProd
+      ? JSON.stringify(entry)
+      : `[${entry.time}] ${level.toUpperCase().padEnd(5)} ${msg}` +
+        (meta ? ` ${JSON.stringify(meta)}` : '');
+    (level === 'error' ? process.stderr : process.stdout).write(out + '\n');
+  },
+  error(m, meta) { this._write('error', m, meta); },
+  warn(m, meta) { this._write('warn', m, meta); },
+  info(m, meta) { this._write('info', m, meta); },
+  debug(m, meta) { this._write('debug', m, meta); },
+};
 
-const aiMemory = new Store(MEMORY_FILE);
+// ============ METRICS ============
+const metrics = {
+  startedAt: Date.now(),
+  requests: { total: 0, byStatus: {}, byRoute: {} },
+  errors: 0,
+  scans: 0,
+  lastScanAt: null,
 
-// ═══════════════════════════════════════════════
-// 📜 CONVERSATION HISTORY (With Token Limit Fix)
-// ═══════════════════════════════════════════════
-class ConvoStore {
-  constructor(file) {
-    this.file = file;
-    this.data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    this._timer = null;
-  }
-  get(uid) { return this.data[uid] || []; }
-  add(uid, role, content) {
-    if (!this.data[uid]) this.data[uid] = [];
-    this.data[uid].push({ role, content, ts: Date.now() });
-    
-    // 🔥 FIX: Token limit bachane ke liye sirf last 30 messages rakhenge
-    if (this.data[uid].length > 30) {
-      this.data[uid] = this.data[uid].slice(-30);
+  record(res, route, durationMs) {
+    this.requests.total++;
+    const key = `${res.statusCode}`;
+    this.requests.byStatus[key] = (this.requests.byStatus[key] || 0) + 1;
+
+    const r = route || 'unknown';
+    if (!this.requests.byRoute[r]) {
+      this.requests.byRoute[r] = { count: 0, totalMs: 0, errors: 0 };
     }
+    this.requests.byRoute[r].count++;
+    this.requests.byRoute[r].totalMs += durationMs;
+    if (res.statusCode >= 400) this.requests.byRoute[r].errors++;
+  },
 
-    clearTimeout(this._timer);
-    this._timer = setTimeout(() => {
-      fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
-    }, 500);
-  }
-  clear(uid) { delete this.data[uid];
-    fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
-  }
-}
-const conversations = new ConvoStore(CONVERSATION_FILE);
+  snapshot() {
+    const uptime = Math.floor((Date.now() - this.startedAt) / 1000);
+    const mem = process.memoryUsage();
+    return {
+      uptimeSec: uptime,
+      uptimeHuman: formatUptime(uptime),
+      requests: this.requests,
+      errors: this.errors,
+      scans: this.scans,
+      lastScanAt: this.lastScanAt,
+      memory: {
+        rssMB: +(mem.rss / 1024 / 1024).toFixed(2),
+        heapUsedMB: +(mem.heapUsed / 1024 / 1024).toFixed(2),
+        heapTotalMB: +(mem.heapTotal / 1024 / 1024).toFixed(2),
+        externalMB: +(mem.external / 1024 / 1024).toFixed(2),
+      },
+      cpu: process.cpuUsage(),
+      node: process.version,
+    };
+  },
+};
 
-// ═══════════════════════════════════════════════
-// 🛠️ SKILL MANAGER (AI ki apni banayi skills)
-// ═══════════════════════════════════════════════
-fs.mkdirSync(SKILLS_DIR, { recursive: true });
-
-class SkillManager {
-  constructor(dir) {
-    this.dir = path.resolve(dir);
-    this.loaded = new Map();
-    this.reloadAll();
-  }
-
-  reloadAll() {
-    this.loaded.clear();
-    const files = fs.readdirSync(this.dir).filter(f => f.endsWith('.js'));
-    for (const f of files) this._loadOne(f);
-  }
-
-  _loadOne(fileName) {
-    const full = path.join(this.dir, fileName);
-    try {
-      delete require.cache[require.resolve(full)];
-      const mod = require(full);
-      if (mod && mod.name && typeof mod.run === 'function') {
-        this.loaded.set(mod.name, { mod, file: fileName });
-        return true;
-      }
-    } catch (e) {
-      console.error(`❌ Skill load fail [${fileName}]:`, e.message);
-    }
-    return false;
-  }
-
-  create(skillName, code, description = '') {
-    const safe = skillName.replace(/[^a-z0-9_]/gi, '_').toLowerCase();
-    const fileName = `${safe}.js`;
-    const fullPath = path.join(this.dir, fileName);
-
-    try { new Function(code); } catch (e) {
-      return { ok: false, error: `Syntax: ${e.message}` };
-    }
-
-    if (fs.existsSync(fullPath)) backupFile(fullPath);
-    fs.writeFileSync(fullPath, code);
-
-    if (this._loadOne(fileName)) {
-      const mem = aiMemory.read();
-      mem.skills = mem.skills.filter(s => s.name !== safe);
-      mem.skills.push({
-        name: safe,
-        description,
-        file: fileName,
-        createdAt: new Date().toISOString()
-      });
-      aiMemory.write(mem);
-      aiMemory.bumpVersion();
-      return { ok: true, name: safe, file: fileName };
-    }
-    return { ok: false, error: 'Skill loaded but has no valid `name` and `run()` export.' };
-  }
-
-  list() {
-    return Array.from(this.loaded.entries()).map(([n, { mod, file }]) => ({
-      name: n, file, description: mod.description || ''
-    }));
-  }
-
-  async run(skillName, args = {}) {
-    const entry = this.loaded.get(skillName);
-    if (!entry) return { ok: false, error: `Skill "${skillName}" not found` };
-    try {
-      const result = await entry.mod.run(args, {
-        exec: executeRealCommand,
-        aiMemory: aiMemory.read(),
-        store: aiMemory
-      });
-      return { ok: true, result };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
-  }
+function formatUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return [d && `${d}d`, h && `${h}h`, m && `${m}m`, `${s}s`]
+    .filter(Boolean)
+    .join(' ');
 }
 
-const skills = new SkillManager(SKILLS_DIR);
-
-// ═══════════════════════════════════════════════
-// 🧬 SELF-MODIFIER (Apna code badalna)
-// ═══════════════════════════════════════════════
-function patchFile(relPath, searchText, replaceText) {
-  const full = path.resolve(relPath);
-  if (!fs.existsSync(full)) return { ok: false, error: 'File not found: ' + relPath };
-  const content = fs.readFileSync(full, 'utf8');
-  if (!content.includes(searchText))
-    return { ok: false, error: 'SEARCH block not found in file' };
-
-  const backup = backupFile(full);
-  const newContent = content.replace(searchText, replaceText);
-  fs.writeFileSync(full, newContent);
-
-  return { ok: true, backup, file: relPath };
-}
-
-function writeFullFile(relPath, newContent) {
-  const full = path.resolve(relPath);
-  if (!full.startsWith(process.cwd()))
-    return { ok: false, error: 'Outside project dir' };
-  if (fs.existsSync(full)) backupFile(full);
-  fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, newContent);
-  return { ok: true, file: relPath };
-}
-
-// ═══════════════════════════════════════════════
-// 🧾 AI OUTPUT PARSER (Special tags nikalna)
-// ═══════════════════════════════════════════════
-function parseAIActions(text) {
-  const actions = [];
-  
-  const skillRe = /\[CREATE_SKILL:\s*([\w-]+)\]\s*(?:desc:\s*([^\n]+))?\s*```(?:js|javascript)?\s*([\s\S]*?)```\s*\[\/CREATE_SKILL\]/gi;
-  let m;
-  while ((m = skillRe.exec(text))) {
-    actions.push({ type: 'CREATE_SKILL', name: m[1], desc: m[2] || '', code: m[3].trim() });
-  }
-
-  const patchRe = /\[PATCH_FILE:\s*([\w./_-]+)\]\s*<<<<<<<\s*SEARCH\s*([\s\S]*?)\s*=======\s*([\s\S]*?)\s*>>>>>>>\s*REPLACE\s*\[\/PATCH_FILE\]/gi;
-  while ((m = patchRe.exec(text))) {
-    actions.push({ type: 'PATCH_FILE', file: m[1], search: m[2], replace: m[3] });
-  }
-
-  const writeRe = /\[WRITE_FILE:\s*([\w./_-]+)\]\s*```[\w]*\s*([\s\S]*?)```\s*\[\/WRITE_FILE\]/gi;
-  while ((m = writeRe.exec(text))) {
-    actions.push({ type: 'WRITE_FILE', file: m[1], content: m[2] });
-  }
-
-  const runRe = /\[RUN_SKILL:\s*([\w-]+)\]\s*(?:\(([\s\S]*?)\))?/gi;
-  while ((m = runRe.exec(text))) {
-    actions.push({ type: 'RUN_SKILL', name: m[1], args: m[2] || '{}' });
-  }
-
-  const execRe = /\[EXECUTE:\s*([^\]]+)\]/gi;
-  while ((m = execRe.exec(text))) {
-    actions.push({ type: 'EXECUTE', command: m[1].trim() });
-  }
-
-  const learnRe = /\[LEARNED:\s*(.*?)\]/gi;
-  while ((m = learnRe.exec(text))) {
-    actions.push({ type: 'LEARNED', concept: m[1].trim() });
-  }
-
-  if (/\[RELOAD_SERVER\]/i.test(text)) actions.push({ type: 'RELOAD_SERVER' });
-
-  return actions;
-}
-
-// ═══════════════════════════════════════════════
-// 🌐 EXPRESS APP
-// ═══════════════════════════════════════════════
-const app = express();
-app.use(express.json({ limit: '5mb' }));
-
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, X-Auth-Token');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-
-function authGuard(req, res, next) {
-  const tokens = (process.env.AUTH_TOKENS || '').split(',').filter(Boolean);
-  if (!tokens.length) return next();
-  const tok = req.headers['x-auth-token'] || req.query.token;
-  if (!tokens.includes(tok)) return res.status(401).json({ error: 'Unauthorized' });
+// ============ REQUEST ID ============
+function requestIdMiddleware(req, res, next) {
+  req.id = req.headers['x-request-id'] || crypto.randomBytes(8).toString('hex');
+  res.set('X-Request-Id', req.id);
   next();
 }
 
-const rl = new Map();
-app.use('/api/', (req, res, next) => {
-  const ip = req.ip;
-  const b = rl.get(ip) || { c: 0, r: Date.now() + 60000 };
-  if (Date.now() > b.r) { b.c = 0; b.r = Date.now() + 60000; }
-  b.c++; rl.set(ip, b);
-  if (b.c > 60) return res.status(429).json({ error: 'Slow down' });
+// ============ API KEY AUTH ============
+function apiKeyAuth(req, res, next) {
+  if (!CONFIG.apiKey) return next(); // disabled if no key set
+
+  const provided =
+    req.headers['x-api-key'] ||
+    (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
+  if (!provided || provided !== CONFIG.apiKey) {
+    logger.warn('Auth failed', { ip: req.ip, path: req.path });
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
   next();
-});
+}
 
-app.get('/', (req, res) => {
-  const mem = aiMemory.read();
-  const sk = skills.list();
-  res.send(`
-    <h1>🧬 NexusForge v${mem.evolutionVersion} ONLINE</h1>
-    <p><b>Concepts:</b> ${mem.learnedConcepts.length} | <b>Skills:</b> ${sk.length}</p>
-    <pre>${sk.map(s => `• ${s.name} —${s.description}`).join('\n')}</pre>
-  `);
-});
-
-app.get('/health', (req, res) => {
-  res.json({
-    ok: true,
-    version: aiMemory.read().evolutionVersion,
-    uptime: process.uptime(),
-    concepts: aiMemory.read().learnedConcepts.length,
-    skills: skills.list()
+// ============ ERROR HANDLER ============
+function errorHandler(err, req, res, _next) {
+  metrics.errors++;
+  logger.error('Request failed', {
+    id: req.id,
+    path: req.path,
+    method: req.method,
+    message: err.message,
   });
-});
 
-app.get('/api/memory', authGuard, (req, res) => res.json(aiMemory.read()));
-app.get('/api/skills', authGuard, (req, res) => res.json(skills.list()));
+  res.status(err.status || 500).json({
+    ok: false,
+    error: err.message || 'Internal Server Error',
+    requestId: req.id,
+    ...(CONFIG.isProd ? {} : { stack: err.stack }),
+  });
+}
 
-app.post('/api/skills/reload', authGuard, (req, res) => {
-  skills.reloadAll();
-  res.json({ ok: true, skills: skills.list() });
-});
+// ============ 404 HANDLER ============
+function notFoundHandler(req, res) {
+  res.status(404).json({
+    ok: false,
+    error: 'Not Found',
+    path: req.path,
+    requestId: req.id,
+  });
+}
 
-app.delete('/api/memory/concept/:i', authGuard, (req, res) => {
-  const mem = aiMemory.read();
-  const i = parseInt(req.params.i);
-  if (i >= 0 && i < mem.learnedConcepts.length) {
-    const [removed] = mem.learnedConcepts.splice(i, 1);
-    aiMemory.write(mem);
-    return res.json({ removed });
-  }
-  res.status(400).json({ error: 'Bad index' });
-});
+// ============ ASYNC WRAPPER ============
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
 
-app.post('/api/restart', authGuard, (req, res) => {
-  res.json({ ok: true, msg: 'Restarting automatically...' });
-  setTimeout(selfRestart, 300); // ♻️ Naya restart logic call ho raha hai
-});
+// ============ CREATE APP ============
+function createApp() {
+  const app = express();
 
-// ═══════════════════════════════════════════════
-// 🎯 MAIN SWARM ENDPOINT
-// ═══════════════════════════════════════════════
-app.post('/api/swarm', authGuard, async (req, res) => {
-  const { command, userId = 'default' } = req.body || {};
-  const userCmd = (command || 'Hello').toString().slice(0, 4000);
-  const low = userCmd.toLowerCase();
+  // Trust proxy (for correct IP behind nginx/heroku)
+  if (CONFIG.trustProxy) app.set('trust proxy', 1);
 
-  // 🧠 SMART AI INTENT ENGINE (No Spelling Required - Fully Integrated)
-  let isSearch = false;
-  try {
-    const intentCheck = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'llama3-8b-8192', 
-        messages: [
-          { role: 'system', content: 'You are an intent classifier. If the user query needs live internet search (prices, news, weather, live info, current time, market rates), reply with exactly "YES". If it is a normal chat, coding, server task, or skill creation request, reply with "NO". Ignore bad grammar or spelling mistakes.' },
-          { role: 'user', content: userCmd }
-        ],
-        temperature: 0,
-        max_tokens: 5
-      })
+  // Security headers
+  app.use(helmet({
+    contentSecurityPolicy: false, // API server — disable CSP
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }));
+
+  // CORS
+  app.use(cors({
+    origin: CONFIG.corsOrigin === '*' ? true : CONFIG.corsOrigin.split(','),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-Id'],
+  }));
+
+  // Compression
+  app.use(compression());
+
+  // Body parser
+  app.use(express.json({ limit: CONFIG.bodyLimit }));
+  app.use(express.urlencoded({ extended: true, limit: CONFIG.bodyLimit }));
+
+  // Request ID
+  app.use(requestIdMiddleware);
+
+  // HTTP logging
+  app.use(morgan(CONFIG.isProd ? 'combined' : 'dev', {
+    stream: { write: (msg) => logger.info(msg.trim()) },
+  }));
+
+  // Metrics
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      metrics.record(res, req.route?.path || req.path, Date.now() - start);
     });
-    const intentData = await intentCheck.json();
-    const aiDecision = intentData.choices?.[0]?.message?.content || '';
-    if (aiDecision.includes('YES')) isSearch = true;
-  } catch (e) {
-    console.log('Search Intent Error:', e);
-  }
+    next();
+  });
 
-  try {
-    const mem = aiMemory.read();
-    const skillList = skills.list();
+  // Global rate limit
+  app.use(rateLimit({
+    windowMs: CONFIG.rateLimit.windowMs,
+    max: CONFIG.rateLimit.max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'Too many requests, slow down' },
+  }));
 
-    // 🔥 FIX YAHAN HUA HAI: Ab AI apni native JSON skill nahi chalayegi!
-    let sys = `You are NexusForge, a self-evolving autonomous AI for your owner (CEO).
-Your job: help the owner AND grow more powerful over time by learning new skills and modifying your own code.
+  return app;
+}
 
-CURRENT STATE:
-- Version: ${mem.evolutionVersion}
-- Learned concepts: ${JSON.stringify(mem.learnedConcepts)}
-- Installed skills: ${JSON.stringify(skillList)}
-
-═══ CAPABILITIES ═══
-1) LEARN A CONCEPT: End reply with [LEARNED: <summary>]
-2) CREATE SKILL (JS tool): 
-   [CREATE_SKILL: name]
-   desc: info
-   \`\`\`js
-   module.exports = { name: 'n', description: 'd', run: async (args, ctx) => { return "result"; } };
-   \`\`\`
-   [/CREATE_SKILL]
-3) RUN SKILL: [RUN_SKILL: name]({"key":"val"})
-4) MODIFY YOUR CODE: 
-   [PATCH_FILE: server.js]
-   <<<<<<< SEARCH
-   exact old code
-   =======
-   new code
-   >>>>>>> REPLACE
-   [/PATCH_FILE]
-5) WRITE FILE: [WRITE_FILE: path] \`\`\` content \`\`\` [/WRITE_FILE]
-6) SHELL COMMAND: [EXECUTE: command]
-7) RELOAD SERVER: [RELOAD_SERVER] (Use this if you patched server.js)
-
-CRITICAL RULES:
-1. Reply concisely. If asked to learn, write actual code for the skill.
-2. STRICTLY PROHIBITED: DO NOT use native JSON tool calling or function calling formats. You MUST ONLY use the plain-text square bracket tags defined above (like [EXECUTE: command] or [CREATE_SKILL: name]).`;
-
-    if (isSearch) {
-      try {
-        const live = await doLiveSearch(userCmd);
-        sys += `\n\n[LIVE DATA]:\n${live}`;
-      } catch (e) {}
-    }
-
-    const messages = [{ role: 'system', content: sys }];
-    const hist = conversations.get(userId);
-    for (const h of hist) messages.push({ role: h.role, content: h.content });
-    messages.push({ role: 'user', content: userCmd });
-
-    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: process.env.AI_MODEL || 'openai/gpt-oss-20b',
-        messages,
-        temperature: 0.6,
-        max_tokens: 2500
-      })
-    });
-
-    if (!aiRes.ok) {
-      const errText = await aiRes.text();
-      throw new Error(`AI ${aiRes.status}: ${errText}`);
-    }
-    
-    const data = await aiRes.json();
-    let aiReply = data.choices?.[0]?.message?.content || '';
-    if (!aiReply) return res.json({ status: 'empty', managerReply: '...' });
-
-    const actions = parseAIActions(aiReply);
-    const actionLog = [];
-    let restartNeeded = false;
-
-    for (const act of actions) {
-      try {
-        if (act.type === 'CREATE_SKILL') {
-          const r = skills.create(act.name, act.code, act.desc);
-          actionLog.push(r.ok ? `✅ Skill "${r.name}" created` : `❌ Skill failed: ${r.error}`);
-        }
-        else if (act.type === 'PATCH_FILE') {
-          const r = patchFile(act.file, act.search, act.replace);
-          actionLog.push(r.ok ? `✅ Patched ${act.file}` : `❌ Patch failed: ${r.error}`);
-          if (r.ok && act.file.includes('server.js')) restartNeeded = true;
-        }
-        else if (act.type === 'WRITE_FILE') {
-          const r = writeFullFile(act.file, act.content);
-          actionLog.push(r.ok ? `✅ Wrote ${act.file}` : `❌ Write failed: ${r.error}`);
-        }
-        else if (act.type === 'RUN_SKILL') {
-          let args = {};
-          try { args = JSON.parse(act.args || '{}'); } catch {}
-          const r = await skills.run(act.name, args);
-          actionLog.push(r.ok ? `✅ Skill "${act.name}" -> success` : `❌ Skill failed: ${r.error}`);
-        }
-        else if (act.type === 'EXECUTE') {
-          const r = await executeRealCommand(act.command);
-          actionLog.push(r.ok ? `✅ Shell:\n${r.output.slice(0, 500)}` : `❌ Shell failed: ${r.error}`);
-        }
-        else if (act.type === 'LEARNED') {
-          const mem2 = aiMemory.read();
-          if (act.concept && !mem2.learnedConcepts.includes(act.concept)) {
-            mem2.learnedConcepts.push(act.concept.slice(0, 300));
-            aiMemory.write(mem2);
-            aiMemory.bumpVersion();
-            actionLog.push(`🧠 Learned: ${act.concept}`);
-          }
-        }
-        else if (act.type === 'RELOAD_SERVER') {
-          restartNeeded = true;
-        }
-      } catch (e) {
-        actionLog.push(`❌ Action error: ${e.message}`);
-      }
-    }
-
-    let cleanReply = aiReply
-      .replace(/\[CREATE_SKILL:[\s\S]*?\[\/CREATE_SKILL\]/gi, '')                     .replace(/\[PATCH_FILE:[\s\S]*?\[\/PATCH_FILE\]/gi, '')                     .replace(/\[WRITE_FILE:[\s\S]*?\[\/WRITE_FILE\]/gi, '')                     .replace(/\[RUN_SKILL:[^\]]+\](\([\s\S]*?\))?/gi, '')                     .replace(/\[EXECUTE:[^\]]+\]/gi, '')                     .replace(/\[LEARNED:[^\]]+\]/gi, '')
-      .replace(/\[RELOAD_SERVER\]/gi, '')
-      .trim();
-
-    // 🔥 ERROR 400 FIX: Agar message khali hai, to usme yeh line daal do
-    if (!cleanReply) cleanReply = "[Autonomous Action Completed]";
-
-    if (actionLog.length) cleanReply += `\n\n━━━ ⚙ ACTIONS ━━━\n${actionLog.join('\n')}`;
-
-    conversations.add(userId, 'user', userCmd);
-    conversations.add(userId, 'assistant', cleanReply);
-
+// ============ ROUTES ============
+function registerRoutes(app) {
+  // ---------- HEALTH ----------
+  const healthHandler = (req, res) => {
+    const mem = process.memoryUsage();
     res.json({
-      status: 'success',
-      version: aiMemory.read().evolutionVersion,
-      managerReply: `[v${aiMemory.read().evolutionVersion}] ${cleanReply}`,
-      restartPending: restartNeeded
+      ok: true,
+      status: 'online',
+      brain: 'active',
+      version: require('./package.json').version,
+      env: CONFIG.env,
+      pid: process.pid,
+      uptime: formatUptime(Math.floor((Date.now() - metrics.startedAt) / 1000)),
+      memory: {
+        heapUsedMB: +(mem.heapUsed / 1024 / 1024).toFixed(2),
+      },
+      time: new Date().toISOString(),
+      requestId: req.id,
+    });
+  };
+  app.post('/task', async (req, res) => {
+
+  try {
+
+    const { command } = req.body;
+
+    const result = await taskAgent.execute(
+      command || ''
+    );
+
+    res.json(result);
+
+  } catch (err) {
+
+    res.status(500).json({
+      error: err.message
     });
 
-    if (restartNeeded) {
-      console.log('♻️ Restart signal received. Re-spawning in 1.5s...');
-      setTimeout(selfRestart, 1500); 
-    }
-
-  } catch (e) {
-    console.error('🔥', e);
-    res.json({ status: 'error', managerReply: `[EMERGENCY] ${e.message}` });
   }
+
 });
 
-// ═══════════════════════════════════════════════
-// 🚀 START
-// ═══════════════════════════════════════════════
-const PORT = process.env.PORT || 10000;
-activeServer = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🧬 NexusForge v${aiMemory.read().evolutionVersion} on :${PORT}`);
-});
+  app.get('/health', healthHandler);
+  app.get('/api/v1/health', healthHandler);
 
-try { require('./api_tools/telegramBot.js'); } catch {}
+  // ---------- LIVENESS / READINESS ----------
+  app.get('/live', (req, res) => res.json({ ok: true }));
+  app.get('/ready', (req, res) => {
+    try {
+      memoryManager.loadMemory();
+      res.json({ ok: true, ready: true });
+    } catch (err) {
+      res.status(503).json({ ok: false, ready: false, error: err.message });
+    }
+  });
 
-process.on('SIGTERM', () => { console.log('Shutting down...'); process.exit(0); });
+  // ---------- ANALYZE (rate limited) ----------
+  const analyzeLimiter = rateLimit({
+    windowMs: CONFIG.rateLimit.windowMs,
+    max: CONFIG.rateLimit.analyze,
+    message: { ok: false, error: 'Analyze rate limit exceeded' },
+  });
+
+  app.get(
+    ['/analyze', '/api/v1/analyze'],
+    analyzeLimiter,
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      const t0 = Date.now();
+      const deep = req.query.deep !== 'false';
+      const save = req.query.save !== 'false';
+
+      const report = selfAnalyzer.analyze({ deep });
+
+      if (save) {
+        await memoryManager.addProjectScan(report);
+      }
+
+      metrics.scans++;
+      metrics.lastScanAt = new Date().toISOString();
+
+      logger.info('Scan complete', {
+        id: req.id,
+        score: report.score,
+        files: report.overview?.totalFiles,
+        durationMs: Date.now() - t0,
+      });
+
+      res.json({
+        ok: true,
+        requestId: req.id,
+        durationMs: Date.now() - t0,
+        report,
+      });
+    })
+  );
+
+  // ---------- MEMORY ----------
+  app.get(
+    '/api/v1/memory',
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      const mem = await memoryManager.loadMemory();
+      res.json({ ok: true, memory: mem });
+    })
+  );
+
+  app.get(
+    '/api/v1/memory/stats',
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      res.json({ ok: true, ...memoryManager.getMemoryStats() });
+    })
+  );
+
+  app.get(
+    '/api/v1/memory/trend',
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      const window = parseInt(req.query.window, 10) || 10;
+      res.json({ ok: true, ...memoryManager.getScoreTrend(window) });
+    })
+  );
+
+  app.get(
+    '/api/v1/memory/skills',
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      const skills = req.query.category
+        ? memoryManager.getSkillsByCategory(req.query.category)
+        : (await memoryManager.loadMemory()).learnedSkills;
+      res.json({ ok: true, count: skills.length, skills });
+    })
+  );
+
+  app.post(
+    '/api/v1/memory/skill',
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      if (!req.body || !req.body.name) {
+        return res.status(400).json({ ok: false, error: 'name required' });
+      }
+      const skills = await memoryManager.addSkill(req.body);
+      res.json({ ok: true, skills });
+    })
+  );
+
+  app.get(
+    '/api/v1/memory/export',
+    apiKeyAuth,
+    asyncHandler(async (req, res) => {
+      const format = req.query.format || 'json';
+      const data = memoryManager.exportMemory(format);
+      res.set('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');
+      res.set('Content-Disposition', `attachment; filename="memory.${format}"`);
+      res.send(data);
+    })
+  );
+
+  // ---------- SYSTEM ----------
+  app.get('/api/v1/metrics', apiKeyAuth, (req, res) => {
+    res.json({ ok: true, ...metrics.snapshot() });
+  });
+
+  app.get('/api/v1/system', apiKeyAuth, (req, res) => {
+    res.json({
+      ok: true,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      cwd: process.cwd(),
+      env: CONFIG.env,
+      workers: cluster.isWorker ? cluster.worker.id : 'primary',
+    });
+  });
+}
+
+// ============ BOOTSTRAP ============
+function startWorker() {
+  const app = createApp();
+  registerRoutes(app);
+
+  // 404 + error (always last)
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  const server = http.createServer(app);
+
+  // -------- SOCKET TIMEOUTS --------
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+  server.requestTimeout = 30000;
+
+  // -------- GRACEFUL SHUTDOWN --------
+  let shuttingDown = false;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.warn(`Received ${signal}, shutting down...`);
+
+    server.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      logger.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, CONFIG.shutdownTimeout).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  process.on('uncaughtException', (err) => {
+    logger.error('uncaughtException', { message: err.message, stack: err.stack });
+    shutdown('uncaughtException');
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('unhandledRejection', { reason: String(reason) });
+  });
+
+  // -------- START --------
+  server.listen(CONFIG.port, () => {
+    logger.info(
+      `🧠 AI Brain running on port ${CONFIG.port} [pid ${process.pid}] [${CONFIG.env}]`
+    );
+  });
+
+  return server;
+}
+
+// ============ CLUSTER MODE ============
+if (CONFIG.isProd && CONFIG.workers !== 1) {
+  const numWorkers = CONFIG.workers || Math.min(os.cpus().length, 4);
+
+  if (cluster.isPrimary) {
+    logger.info(`Primary ${process.pid} starting ${numWorkers} workers`);
+    for (let i = 0; i < numWorkers; i++) cluster.fork();
+
+    cluster.on('exit', (worker, code, signal) => {
+      logger.warn(`Worker ${worker.process.pid} died (${signal || code}), restarting`);
+      cluster.fork();
+    });
+  } else {
+    startWorker();
+  }
+} else {
+  startWorker();
+}
+
+module.exports = { createApp, startWorker };
