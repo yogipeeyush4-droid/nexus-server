@@ -1,29 +1,29 @@
-const taskAgent = require('./agents/taskAgent');
+// server.js — Nexus Forge Engine
+'use strict';
+
 require('dotenv').config();
 
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
-const compression = require('compression');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
-const cluster = require('cluster');
-const os = require('os');
-const http = require('http');
-const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs');
+const express       = require('express');
+const helmet        = require('helmet');
+const cors          = require('cors');
+const compression   = require('compression');
+const morgan        = require('morgan');
+const rateLimit     = require('express-rate-limit');
+const cluster       = require('cluster');
+const os            = require('os');
+const http          = require('http');
+const crypto        = require('crypto');
 
-const projectScanner = require('./core/projectScanner');
-const selfAnalyzer = require('./core/selfAnalyzer');
-const memoryManager = require('./core/memoryManager');
+const taskAgent      = require('./agents/taskAgent');
+const memoryManager  = require('./core/memoryManager');
+const selfAnalyzer   = require('./core/selfAnalyzer');
 
 // ============ CONFIG ============
 const CONFIG = {
   port: parseInt(process.env.PORT, 10) || 3000,
   env: process.env.NODE_ENV || 'development',
   isProd: process.env.NODE_ENV === 'production',
-  workers: parseInt(process.env.WORKERS, 10) || 0, // 0 = auto
+  workers: parseInt(process.env.WORKERS, 10) || 0,
   apiVersion: 'v1',
   bodyLimit: process.env.BODY_LIMIT || '1mb',
   corsOrigin: process.env.CORS_ORIGIN || '*',
@@ -46,9 +46,7 @@ const logger = {
     if (LOG_LEVELS[level] > CURRENT_LEVEL) return;
     const entry = {
       time: new Date().toISOString(),
-      level,
-      msg,
-      pid: process.pid,
+      level, msg, pid: process.pid,
       ...(meta && { meta }),
     };
     const out = CONFIG.isProd
@@ -58,8 +56,8 @@ const logger = {
     (level === 'error' ? process.stderr : process.stdout).write(out + '\n');
   },
   error(m, meta) { this._write('error', m, meta); },
-  warn(m, meta) { this._write('warn', m, meta); },
-  info(m, meta) { this._write('info', m, meta); },
+  warn(m, meta)  { this._write('warn',  m, meta); },
+  info(m, meta)  { this._write('info',  m, meta); },
   debug(m, meta) { this._write('debug', m, meta); },
 };
 
@@ -96,10 +94,10 @@ const metrics = {
       scans: this.scans,
       lastScanAt: this.lastScanAt,
       memory: {
-        rssMB: +(mem.rss / 1024 / 1024).toFixed(2),
-        heapUsedMB: +(mem.heapUsed / 1024 / 1024).toFixed(2),
-        heapTotalMB: +(mem.heapTotal / 1024 / 1024).toFixed(2),
-        externalMB: +(mem.external / 1024 / 1024).toFixed(2),
+        rssMB:        +(mem.rss / 1024 / 1024).toFixed(2),
+        heapUsedMB:   +(mem.heapUsed / 1024 / 1024).toFixed(2),
+        heapTotalMB:  +(mem.heapTotal / 1024 / 1024).toFixed(2),
+        externalMB:   +(mem.external / 1024 / 1024).toFixed(2),
       },
       cpu: process.cpuUsage(),
       node: process.version,
@@ -112,9 +110,7 @@ function formatUptime(sec) {
   const h = Math.floor((sec % 86400) / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  return [d && `${d}d`, h && `${h}h`, m && `${m}m`, `${s}s`]
-    .filter(Boolean)
-    .join(' ');
+  return [d && `${d}d`, h && `${h}h`, m && `${m}m`, `${s}s`].filter(Boolean).join(' ');
 }
 
 // ============ REQUEST ID ============
@@ -126,12 +122,10 @@ function requestIdMiddleware(req, res, next) {
 
 // ============ API KEY AUTH ============
 function apiKeyAuth(req, res, next) {
-  if (!CONFIG.apiKey) return next(); 
-
+  if (!CONFIG.apiKey) return next();
   const provided =
     req.headers['x-api-key'] ||
     (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-
   if (!provided || provided !== CONFIG.apiKey) {
     logger.warn('Auth failed', { ip: req.ip, path: req.path });
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -139,16 +133,12 @@ function apiKeyAuth(req, res, next) {
   next();
 }
 
-// ============ ERROR HANDLER ============
+// ============ ERROR HANDLERS ============
 function errorHandler(err, req, res, _next) {
   metrics.errors++;
   logger.error('Request failed', {
-    id: req.id,
-    path: req.path,
-    method: req.method,
-    message: err.message,
+    id: req.id, path: req.path, method: req.method, message: err.message,
   });
-
   res.status(err.status || 500).json({
     ok: false,
     error: err.message || 'Internal Server Error',
@@ -157,13 +147,10 @@ function errorHandler(err, req, res, _next) {
   });
 }
 
-// ============ 404 HANDLER ============
 function notFoundHandler(req, res) {
   res.status(404).json({
-    ok: false,
-    error: 'Not Found',
-    path: req.path,
-    requestId: req.id,
+    ok: false, error: 'Not Found',
+    path: req.path, requestId: req.id,
   });
 }
 
@@ -171,14 +158,14 @@ function notFoundHandler(req, res) {
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
-// ============ CREATE APP ============
+// ============ APP ============
 function createApp() {
   const app = express();
 
   if (CONFIG.trustProxy) app.set('trust proxy', 1);
 
   app.use(helmet({
-    contentSecurityPolicy: false, 
+    contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
 
@@ -219,6 +206,8 @@ function createApp() {
 
 // ============ ROUTES ============
 function registerRoutes(app) {
+
+  // Health check
   const healthHandler = (req, res) => {
     const mem = process.memoryUsage();
     res.json({
@@ -229,76 +218,93 @@ function registerRoutes(app) {
       env: CONFIG.env,
       pid: process.pid,
       uptime: formatUptime(Math.floor((Date.now() - metrics.startedAt) / 1000)),
-      memory: {
-        heapUsedMB: +(mem.heapUsed / 1024 / 1024).toFixed(2),
-      },
+      memory: { heapUsedMB: +(mem.heapUsed / 1024 / 1024).toFixed(2) },
       time: new Date().toISOString(),
       requestId: req.id,
     });
   };
 
-  // 🔥 100% FIXED SWARM ROUTE
+  // ============================================================
+  // 🔥 MAIN SWARM ROUTE — FULLY FIXED
+  // ============================================================
   app.post('/api/swarm', async (req, res) => {
     try {
       const { command } = req.body;
       const cmdText = (command || '').toLowerCase().trim();
 
-      let cleanReply = "";
+      let cleanReply = '';
 
-      // 1. Expanded Greeting & Conversational Check
       const greetings = ['hi', 'hello', 'hey', 'namaste', 'good morning', 'good evening'];
       const howAreYou = ['kese ho', 'kaise ho', 'kya haal', 'how are you'];
 
       if (greetings.includes(cmdText)) {
-          cleanReply = "Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?";
-      } 
-      else if (howAreYou.some(phrase => cmdText.includes(phrase))) {
-          cleanReply = "Main bilkul theek hoon Boss! Aap batayein, aaj kya kaam karna hai?";
-      }
-      else {
-          // 2. Baaki kisi bhi command ke liye actual taskAgent call
-          const result = await taskAgent.execute(command || '');
-          
-          let parsedData = result;
-          if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
-              try {
-                  parsedData = JSON.parse(result);
-              } catch(e) {} // Agar parse fail hua, toh original string hi use hogi
-          }
+        cleanReply = 'Hello Boss! Nexus System online hai. Bataiye kya commands hain aaj ke liye?';
+      } else if (howAreYou.some(phrase => cmdText.includes(phrase))) {
+        cleanReply = 'Main bilkul theek hoon Boss! Aap batayein, aaj kya kaam karna hai?';
+      } else {
+        // Actual task agent call
+        const result = await taskAgent.execute(command || '', { userId: 'ceo' });
 
-          // 3. Object me se asli answer nikalna
-          if (typeof parsedData === 'object' && parsedData !== null) {
-              if (parsedData.managerReply) {
-                  cleanReply = parsedData.managerReply;
-              } else if (parsedData.reply) {
-                  cleanReply = parsedData.reply;
-              } else if (parsedData.message) {
-                  cleanReply = parsedData.message;
-              } else if (parsedData.intent === 'help') {
-                  // Agar bot ko samajh nahi aaya, toh 'help' intent ka matlab 'command nahi mila' hai
-                  cleanReply = "Main samajh nahi paya Boss. Kripya specific command batayein ya 'help' type karein.";
-              } else {
-                  cleanReply = `[Task Analyzed: ${parsedData.intent || 'Action'}] Backend mein command chala di gayi hai.`;
-              }
-          } else {
-              // Agar answer direct text mein aaya hai
-              cleanReply = String(result);
+        // 🔍 DEBUG — pehle 3 din zaroor rakho
+        console.log('[/api/swarm] taskAgent result:', JSON.stringify(result));
+
+        let parsedData = result;
+        if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
+          try { parsedData = JSON.parse(result); } catch (e) { /* keep string */ }
+        }
+
+        if (typeof parsedData === 'object' && parsedData !== null) {
+          // ✅ Priority #1: error check
+          if (parsedData.ok === false && parsedData.error) {
+            cleanReply = `❌ ${parsedData.error}`;
           }
+          // Priority #2: direct reply fields
+          else if (parsedData.managerReply) {
+            cleanReply = parsedData.managerReply;
+          } else if (parsedData.reply) {
+            cleanReply = parsedData.reply;
+          } else if (parsedData.message) {
+            cleanReply = parsedData.message;
+          }
+          // Priority #3: structured intents
+          else if (parsedData.report) {
+            const score = parsedData.report.score ?? 'N/A';
+            const files = parsedData.report.overview?.totalFiles ?? '?';
+            cleanReply = `📊 Project Scan Complete\nScore: ${score}\nFiles: ${files}`;
+          } else if (parsedData.stats) {
+            cleanReply = `🧠 Memory Stats:\n${JSON.stringify(parsedData.stats, null, 2).slice(0, 500)}`;
+          } else if (parsedData.commands && Array.isArray(parsedData.commands)) {
+            cleanReply = `📋 Available Commands:\n${parsedData.commands.map(c => `• ${c.name} — ${c.description}`).join('\n')}`;
+          } else if (parsedData.action === 'list' && Array.isArray(parsedData.skills)) {
+            cleanReply = parsedData.skills.length
+              ? `🎯 Skills (${parsedData.count}):\n${parsedData.skills.map(s => `• ${s.name || s}`).join('\n')}`
+              : '🎯 Koi skill nahi hai abhi.';
+          } else if (parsedData.data) {
+            cleanReply = `📦 ${String(parsedData.data).slice(0, 1500)}`;
+          } else {
+            // Last-resort: show what we got so it's not silently swallowed
+            cleanReply = `[${parsedData.intent || 'Info'}] ${JSON.stringify(parsedData).slice(0, 300)}`;
+          }
+        } else {
+          cleanReply = String(result);
+        }
       }
 
       res.json({
         status: 'success',
-        managerReply: cleanReply || "[Autonomous Action Completed]"
+        managerReply: cleanReply || '[Autonomous Action Completed]',
       });
 
     } catch (err) {
+      console.error('[/api/swarm] FATAL:', err);
       res.status(500).json({
         status: 'error',
-        managerReply: `[EMERGENCY] ${err.message}`
+        managerReply: `[EMERGENCY] ${err.message}`,
       });
     }
   });
 
+  // Health endpoints
   app.get('/health', healthHandler);
   app.get('/api/v1/health', healthHandler);
 
@@ -312,6 +318,7 @@ function registerRoutes(app) {
     }
   });
 
+  // Analyze
   const analyzeLimiter = rateLimit({
     windowMs: CONFIG.rateLimit.windowMs,
     max: CONFIG.rateLimit.analyze,
@@ -328,10 +335,7 @@ function registerRoutes(app) {
       const save = req.query.save !== 'false';
 
       const report = selfAnalyzer.analyze({ deep });
-
-      if (save) {
-        await memoryManager.addProjectScan(report);
-      }
+      if (save) await memoryManager.addProjectScan(report);
 
       metrics.scans++;
       metrics.lastScanAt = new Date().toISOString();
@@ -343,76 +347,49 @@ function registerRoutes(app) {
         durationMs: Date.now() - t0,
       });
 
-      res.json({
-        ok: true,
-        requestId: req.id,
-        durationMs: Date.now() - t0,
-        report,
-      });
+      res.json({ ok: true, requestId: req.id, durationMs: Date.now() - t0, report });
     })
   );
 
-  app.get(
-    '/api/v1/memory',
-    apiKeyAuth,
-    asyncHandler(async (req, res) => {
-      const mem = await memoryManager.loadMemory();
-      res.json({ ok: true, memory: mem });
-    })
-  );
+  // Memory endpoints
+  app.get('/api/v1/memory', apiKeyAuth, asyncHandler(async (req, res) => {
+    const mem = await memoryManager.loadMemory();
+    res.json({ ok: true, memory: mem });
+  }));
 
-  app.get(
-    '/api/v1/memory/stats',
-    apiKeyAuth,
-    asyncHandler(async (req, res) => {
-      res.json({ ok: true, ...memoryManager.getMemoryStats() });
-    })
-  );
+  app.get('/api/v1/memory/stats', apiKeyAuth, asyncHandler(async (req, res) => {
+    res.json({ ok: true, ...memoryManager.getMemoryStats() });
+  }));
 
-  app.get(
-    '/api/v1/memory/trend',
-    apiKeyAuth,
-    asyncHandler(async (req, res) => {
-      const window = parseInt(req.query.window, 10) || 10;
-      res.json({ ok: true, ...memoryManager.getScoreTrend(window) });
-    })
-  );
+  app.get('/api/v1/memory/trend', apiKeyAuth, asyncHandler(async (req, res) => {
+    const window = parseInt(req.query.window, 10) || 10;
+    res.json({ ok: true, ...memoryManager.getScoreTrend(window) });
+  }));
 
-  app.get(
-    '/api/v1/memory/skills',
-    apiKeyAuth,
-    asyncHandler(async (req, res) => {
-      const skills = req.query.category
-        ? memoryManager.getSkillsByCategory(req.query.category)
-        : (await memoryManager.loadMemory()).learnedSkills;
-      res.json({ ok: true, count: skills.length, skills });
-    })
-  );
+  app.get('/api/v1/memory/skills', apiKeyAuth, asyncHandler(async (req, res) => {
+    const skills = req.query.category
+      ? memoryManager.getSkillsByCategory(req.query.category)
+      : (await memoryManager.loadMemory()).learnedSkills;
+    res.json({ ok: true, count: skills.length, skills });
+  }));
 
-  app.post(
-    '/api/v1/memory/skill',
-    apiKeyAuth,
-    asyncHandler(async (req, res) => {
-      if (!req.body || !req.body.name) {
-        return res.status(400).json({ ok: false, error: 'name required' });
-      }
-      const skills = await memoryManager.addSkill(req.body);
-      res.json({ ok: true, skills });
-    })
-  );
+  app.post('/api/v1/memory/skill', apiKeyAuth, asyncHandler(async (req, res) => {
+    if (!req.body || !req.body.name) {
+      return res.status(400).json({ ok: false, error: 'name required' });
+    }
+    const skills = await memoryManager.addSkill(req.body);
+    res.json({ ok: true, skills });
+  }));
 
-  app.get(
-    '/api/v1/memory/export',
-    apiKeyAuth,
-    asyncHandler(async (req, res) => {
-      const format = req.query.format || 'json';
-      const data = memoryManager.exportMemory(format);
-      res.set('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');
-      res.set('Content-Disposition', `attachment; filename="memory.${format}"`);
-      res.send(data);
-    })
-  );
+  app.get('/api/v1/memory/export', apiKeyAuth, asyncHandler(async (req, res) => {
+    const format = req.query.format || 'json';
+    const data = memoryManager.exportMemory(format);
+    res.set('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');
+    res.set('Content-Disposition', `attachment; filename="memory.${format}"`);
+    res.send(data);
+  }));
 
+  // Metrics & system
   app.get('/api/v1/metrics', apiKeyAuth, (req, res) => {
     res.json({ ok: true, ...metrics.snapshot() });
   });
@@ -442,8 +419,8 @@ function startWorker() {
   const server = http.createServer(app);
 
   server.keepAliveTimeout = 65000;
-  server.headersTimeout = 66000;
-  server.requestTimeout = 30000;
+  server.headersTimeout  = 66000;
+  server.requestTimeout  = 30000;
 
   let shuttingDown = false;
   const shutdown = (signal) => {
@@ -463,7 +440,7 @@ function startWorker() {
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 
   process.on('uncaughtException', (err) => {
     logger.error('uncaughtException', { message: err.message, stack: err.stack });
@@ -475,9 +452,7 @@ function startWorker() {
   });
 
   server.listen(CONFIG.port, () => {
-    logger.info(
-      `🧠 AI Brain running on port ${CONFIG.port} [pid ${process.pid}] [${CONFIG.env}]`
-    );
+    logger.info(`🧠 AI Brain running on port ${CONFIG.port} [pid ${process.pid}] [${CONFIG.env}]`);
   });
 
   return server;
