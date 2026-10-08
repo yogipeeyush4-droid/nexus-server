@@ -1,11 +1,11 @@
-// agent/taskAgent.js  —  Nexus Task Agent v2.0
+// agent/taskAgent.js  —  Nexus Task Agent v2.1
 'use strict';
 
-const EventEmitter = require('events');
-const crypto       = require('crypto');
-const selfAnalyzer = require('../core/selfAnalyzer');
-const memoryManager= require('../core/memoryManager');
-const webSearch    = require('./webSearchAgent');
+const EventEmitter  = require('events');
+const crypto        = require('crypto');
+const selfAnalyzer  = require('../core/selfAnalyzer');
+const memoryManager = require('../core/memoryManager');
+const webSearch     = require('./webSearchAgent');
 
 // Node < 18 safety
 const fetchFn = global.fetch || (() => { try { return require('node-fetch'); } catch { return null; } })();
@@ -14,7 +14,7 @@ if (!fetchFn) console.warn('[TaskAgent] ⚠️ No fetch — Node 18+ ya node-fet
 // ============ CONFIG ============
 const CONFIG = {
   maxHistory: 500,
-  maxConversationTurns: 20,          // 🧠 999 bekaar tha — token budget
+  maxConversationTurns: 20,
   defaultTimeoutMs: 30000,
   enableRetry: true,
   maxRetries: 2,
@@ -24,9 +24,9 @@ const CONFIG = {
   enableCache: true,
   cacheTTLMs: 60000,
   rateLimit: { windowMs: 60000, max: 30 },
-  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',  // ✅ fixed
+  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
   groqEndpoint: 'https://api.groq.com/openai/v1/chat/completions',
-  maxPromptChars: 8000,               // 🔒 injection guard
+  maxPromptChars: 8000,
 };
 
 const log = {
@@ -95,7 +95,6 @@ function extractEntities(text) {
   const e = {};
   const files = text.match(/\b[\w\-]+\.(js|json|py|md|txt|env|html|css|ts)\b/gi);
   if (files) e.files = [...new Set(files)];
-  // ✅ only standalone numbers (avoid version numbers, dates mid-word)
   const nums = [...text.matchAll(/(?<![\w.])(-?\d+(?:\.\d+)?)(?![\w.])/g)].map(m => Number(m[1]));
   if (nums.length) e.numbers = nums;
   const quoted = [...text.matchAll(/["']([^"']{1,200})["']/g)].map(m => m[1]);
@@ -125,7 +124,7 @@ function analyzeSentiment(text) {
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
   if (!m) return n; if (!n) return m;
-  if (Math.abs(m - n) > 2) return 99;              // ⚡ early exit
+  if (Math.abs(m - n) > 2) return 99;
   const row = new Array(n + 1);
   for (let j = 0; j <= n; j++) row[j] = j;
   for (let i = 1; i <= m; i++) {
@@ -149,9 +148,7 @@ async function askGroqAI(prompt, session = null, options = {}) {
   if (!process.env.GROQ_API_KEY) return "Boss, GROQ_API_KEY set nahi hai. .env check karo.";
   if (!fetchFn) return "Boss, Node 18+ chahiye ya `node-fetch` install karo.";
 
-  // 🔒 sanitize
   const safePrompt = String(prompt).slice(0, CONFIG.maxPromptChars);
-
   const now  = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const mood = session?.mood || 'neutral';
   const context = (session?.turns || []).slice(-CONFIG.maxConversationTurns)
@@ -211,13 +208,13 @@ const INTENTS = [
     description: 'Search the internet for live information',
     patterns: [
       /\b(search|google|net pe|internet|find online|dhundo|dhoondo)\b/i,
-      /\b(live|current|latest|aaj ka|aaj ki)\b.*\b(news|update|price|rate|bhav|score|weather|mausam)\b/i,
+      /\b(live|current|latest|aaj ka|aaj ki)\b.*\b(news|update|price|rate|bhav|score|weather|mausam|gold|silver|dollar)\b/i,
     ],
     keywords: ['search', 'google', 'net', 'live', 'online', 'dhundo'],
     weight: 12,
     handler: async (ctx) => {
-      // ✅ proper query cleanup — Hinglish + English stopwords
-      const STOP = /\b(search|google|karo|kro|kar|do|de|dekho|dikhao|batao|bata|kya|hai|hain|ka|ki|ke|me|mein|pe|par|net|internet|online|please|pls|boss|bhai|yr|yaar)\b/gi;
+      // ✅ Extended stopword list — Hinglish + English
+      const STOP = /\b(search|google|karo|kro|kar|do|de|dekho|dikhao|batao|bata|btao|kya|hai|hain|ka|ki|ke|me|mein|pe|par|net|internet|online|please|pls|boss|bhai|yr|yaar|jake|jaake|jakar|chal|chalo|abhi|ab|aj|aaj|krna|karna|bhaiya|ji)\b/gi;
       const query = ctx.parsed.raw.replace(STOP, ' ').replace(/\s+/g, ' ').trim();
 
       if (!query || query.length < 2) {
@@ -231,7 +228,7 @@ const INTENTS = [
         if (result.results?.length) {
           reply += `🔗 **Top Links:**\n`;
           result.results.forEach((r, i) => {
-            reply += `${i+1}. ${r.title}\n   ${r.link}\n`;
+            reply += `${i + 1}. ${r.title}\n   ${r.link}\n`;
           });
         } else reply += "Koi specific link nahi mila Boss.\n";
         return { managerReply: reply };
@@ -295,7 +292,6 @@ const INTENTS = [
   {
     name: 'memory-stats',
     description: 'Show memory statistics',
-    // ✅ negative guard: "reset memory" isse match na kare
     patterns: [/\b(memory|brain|stats|statistics|trend|history)\b/i],
     keywords: ['memory', 'brain', 'stats', 'trend', 'history', 'score'],
     weight: 6,
@@ -321,7 +317,7 @@ const INTENTS = [
     permissions: ['admin'],
     examples: ['reset memory', 'reset memory keepBackups:false'],
     handler: async (ctx) => {
-      const keep = ctx.keepBackups !== false;   // default true
+      const keep = ctx.keepBackups !== false;
       await memoryManager.resetMemory(keep);
       return { status: 'reset', keepBackups: keep };
     },
@@ -393,7 +389,6 @@ function coerce(v) {
 function matchIntent(parsed, returnAll = false) {
   const scores = [];
   for (const intent of INTENTS) {
-    // 🛡️ negative patterns — instant disqualify
     if (intent.negativePatterns?.some(p => p.test(parsed.raw))) continue;
 
     let score = 0;
@@ -412,6 +407,7 @@ function matchIntent(parsed, returnAll = false) {
 const middlewares = [];
 function use(fn) { middlewares.push(fn); }
 
+// ✅ FIX #1: return propagate karo
 async function runMiddlewares(ctx, handler) {
   let idx = -1;
   const dispatch = async (i) => {
@@ -419,26 +415,30 @@ async function runMiddlewares(ctx, handler) {
     idx = i;
     const mw = middlewares[i];
     if (!mw) return handler(ctx);
-    await mw(ctx, () => dispatch(i + 1));
+    return await mw(ctx, () => dispatch(i + 1));
   };
   return dispatch(0);
 }
 
+// ✅ FIX #2: log middleware return passthrough
 use(async (ctx, next) => {
   if (CONFIG.logCommands) log.info(`exec "${ctx.parsed.raw}" → ${ctx.intent?.name || 'chat'}`);
   ctx.startedAt = Date.now();
-  await next();
+  const result = await next();
   ctx.durationMs = Date.now() - ctx.startedAt;
+  return result;
 });
 
+// ✅ FIX #3: permission middleware return passthrough
 use(async (ctx, next) => {
   const perms = ctx.intent?.permissions || [];
   const userPerms = ctx.user?.permissions || ['user'];
   const ok = perms.every(p => userPerms.includes(p) || userPerms.includes('admin'));
   if (!ok) throw Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED', required: perms });
-  await next();
+  return await next();
 });
 
+// ✅ FIX #4: timeout middleware return passthrough
 use(async (ctx, next) => {
   const timeout = ctx.timeoutMs || CONFIG.defaultTimeoutMs;
   let timer;
@@ -446,7 +446,7 @@ use(async (ctx, next) => {
     timer = setTimeout(() => rej(Object.assign(new Error('Timeout'), { code: 'TIMEOUT' })), timeout);
   });
   try {
-    await Promise.race([next(), timeoutPromise]);
+    return await Promise.race([next(), timeoutPromise]);
   } finally {
     clearTimeout(timer);
   }
@@ -465,10 +465,10 @@ async function execute(command, options = {}) {
 
   // 2) Parse + mood
   const parsed = parseCommand(command);
-  session.mood = parsed.sentiment.mood;                 // ✅ mood fix
+  session.mood = parsed.sentiment.mood;
   session.entities = { ...session.entities, ...parsed.entities };
 
-  // 3) Cache (only for non-mutating reads)
+  // 3) Cache check
   const cacheable = /^(status|help|memory-stats|skill-manage)$/;
   const matches = matchIntent(parsed);
   const top = matches[0];
@@ -487,7 +487,6 @@ async function execute(command, options = {}) {
     user: options.user || { permissions: ['user', ...(options.isAdmin ? ['admin'] : [])] },
     session,
     timeoutMs: options.timeoutMs,
-    // spread parsed params into ctx so handlers can read ctx.deep/skill/etc.
     ...parsed.params,
     deep: parsed.params.deep,
     save: parsed.params.save,
@@ -503,10 +502,9 @@ async function execute(command, options = {}) {
       ctx.intent = top.intent;
       result = await runMiddlewares(ctx, () => top.intent.handler(ctx));
     } else {
-      // 🔥 SMART FALLBACK — AI chat
+      // AI fallback
       const aiReply = await askGroqAI(parsed.raw, session);
       if (aiReply && typeof aiReply === 'object' && aiReply.toolCalls) {
-        // tool calls — log + graceful text
         log.warn('AI requested tool_calls:', aiReply.toolCalls.length);
         result = { managerReply: aiReply.raw || 'Boss, AI ne tool use karna chaha par tool wired nahi hai.' };
       } else {
@@ -518,26 +516,34 @@ async function execute(command, options = {}) {
     return { ok: false, error: err.message, code: err.code || 'EXEC_ERROR', intent: top?.intent?.name };
   }
 
+  // ✅ Fix: undefined result ko safe karo
+  if (result === undefined || result === null) {
+    result = { managerReply: 'Boss, handler ne kuch return nahi kiya.' };
+  }
+  if (typeof result === 'string') {
+    result = { managerReply: result };
+  }
+
   const response = {
     ok: true,
     intent: top?.intent?.name || 'chat',
     userId,
     mood: session.mood,
     durationMs: Date.now() - ctx.startedAt,
-    ...((typeof result === 'object' && result) ? result : { managerReply: result }),
+    ...result,
   };
 
   // 5) Store AI turn
-  const aiText = response.managerReply ||
-    (response.report ? '[project scan report]' : '') ||
-    (response.stats ? '[memory stats]' : '') ||
-    JSON.stringify(response).slice(0, 500);
+  const aiText = response.managerReply
+    || (response.report ? '[project scan report]' : '')
+    || (response.stats ? '[memory stats]' : '')
+    || JSON.stringify(response).slice(0, 500);
   sessionStore.addTurn(userId, 'assistant', aiText);
 
   // 6) Cache
   if (top && cacheable.test(top.intent.name)) cache.set(parsed.raw, userId, response);
 
-  // 7) Emit event
+  // 7) Emit
   agent.emit('executed', { userId, intent: response.intent, durationMs: response.durationMs });
 
   return response;
