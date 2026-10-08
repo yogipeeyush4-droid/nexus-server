@@ -24,7 +24,7 @@ const CONFIG = {
   enableCache: true,
   cacheTTLMs: 60000,
   rateLimit: { windowMs: 60000, max: 30 },
-  groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',  // ✅ fixed
+  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',  // ✅ fixed
   groqEndpoint: 'https://api.groq.com/openai/v1/chat/completions',
   maxPromptChars: 8000,               // 🔒 injection guard
 };
