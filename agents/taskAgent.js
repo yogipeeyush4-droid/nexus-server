@@ -3,10 +3,13 @@ const crypto = require('crypto');
 const selfAnalyzer = require('../core/selfAnalyzer');
 const memoryManager = require('../core/memoryManager');
 
+// 🔥 NAYA: Internet search file ko yahan import kiya gaya hai
+const webSearch = require('./webSearchAgent'); 
+
 // ============ CONFIG ============
 const CONFIG = {
   maxHistory: 200,
-  maxConversationTurns: 10,
+  maxConversationTurns: 999,
   defaultTimeoutMs: 30000,
   enableRetry: true,
   maxRetries: 2,
@@ -205,6 +208,51 @@ Keep answers short and direct. If asked to do something, confirm it clearly.`;
 
 // ============ INTENTS ============
 const INTENTS = [
+  // 🔥 NAYA: Web Search Intent yahan add kiya gaya hai
+  {
+    name: 'web-search',
+    description: 'Search the internet for live information',
+    patterns: [
+      /\b(search|google|net pe|internet|find online)\b/i,
+      /\b(live|current|latest)\b.*\b(news|update|price|rate|bhav)\b/i
+    ],
+    keywords: ['search', 'google', 'net', 'live', 'online'],
+    weight: 12, 
+    handler: async (ctx) => {
+      // Command me se aam words hata kar asli topic nikalna
+      const query = ctx.parsed.raw.replace(/\b(search|google|net pe dekho|karo|batao|kya hai)\b/gi, '').trim();
+      
+      if (!query) {
+        return { managerReply: "Boss, kya search karna hai? Topic bataiye." };
+      }
+
+      try {
+        const searchResult = await webSearch.doLiveSearch(query, { provider: 'auto', limit: 3 });
+        
+        let reply = `🔍 **Live Search Results for:** "${query}"\n\n`;
+        
+        // Tavily AI ka direct summary answer
+        if (searchResult.answer) {
+            reply += `💡 **AI Summary:** ${searchResult.answer}\n\n`;
+        }
+        
+        // Google (Serper) ke top links
+        if (searchResult.results && searchResult.results.length > 0) {
+            reply += `🔗 **Top Links:**\n`;
+            searchResult.results.forEach((r, i) => {
+                reply += `${i + 1}. ${r.title}\n   ${r.link}\n`;
+            });
+        } else {
+            reply += "Koi specific link nahi mila Boss.\n";
+        }
+
+        return { managerReply: reply };
+
+      } catch (e) {
+        return { managerReply: `[Search Error] Boss, net connection mein dikkat hai: ${e.message}` };
+      }
+    },
+  },
   {
     name: 'analyze',
     description: 'Run project analysis / scan',
@@ -364,7 +412,7 @@ function matchIntent(parsed, returnAll = false) {
       else if (parsed.lower.includes(kw)) score += 1;
     }
     
-    // 🔥 FIX YAHAN LAGA HAI: Intent ka weight tabhi add hoga jab sach mein kuch match ho
+    // Intent ka weight tabhi add hoga jab sach mein kuch match ho
     if (score > 0) {
       score += intent.weight;
       scores.push({ intent, score });
