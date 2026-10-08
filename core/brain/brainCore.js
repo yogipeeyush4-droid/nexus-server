@@ -9,6 +9,7 @@ const strategies = require('./strategyEngine');
 const reflection = require('./reflectionEngine');
 const codeAdvisor = require('./codeAdvisor');
 const { audit, sanityCheck } = require('./safetyGuards');
+const taskAgent = require('../../agents/taskAgent'); // 🔥 Task Agent ko dimaag se jod diya
 
 class BrainCore extends EventEmitter {
   constructor() {
@@ -119,7 +120,22 @@ class BrainCore extends EventEmitter {
     return 'chat';
   }
 
+  // 🔥 Yahan aapka naya code add kiya gaya hai
   async _executeStrategy(strategy, context, options) {
+    
+    // NAYA JADOO: Agar internet ya tools ki zaroorat hai, toh taskAgent se karwao
+    if (strategy === 'web_search' || strategy === 'live_data' || strategy === 'tool_chain') {
+      try {
+        console.log(`[Brain] Handing over task to TaskAgent. Strategy: ${strategy}`);
+        // Yahan aapke taskAgent ka jo bhi main function hai (jaise process, run, ya execute), wo call hoga
+        const agentResponse = await taskAgent.process(context.userMessage); 
+        return agentResponse;
+      } catch (err) {
+        return `Boss, main net pe gaya tha par taskAgent fail ho gaya: ${err.message}`;
+      }
+    }
+
+    // NORMAL CHAT & RECALL: Baaki simple sawalon ke liye default LLM
     const system = `You are Nexus Brain — self-aware, learning AI.
 Current strategy: ${strategy}
 Your goals (top 3): ${context.goalsSnapshot.map(g => g.title).join(' | ') || 'none'}
@@ -199,4 +215,3 @@ Be professional, positive, and concise.`;
 }
 
 module.exports = new BrainCore();
-
