@@ -1,11 +1,9 @@
 /**
- * Google Search + Tavily AI Search — Unified Tool
- * Supports: Serper (Google) + Tavily (AI-enhanced)
- *
- * Usage:
- *   const { doLiveSearch } = require('./googleSearch');
- *   const result = await doLiveSearch('best pizza in mumbai');
+ * agent/webSearchAgent.js
+ * Google Search (Serper) + Tavily AI Search — Unified Tool
  */
+
+'use strict';
 
 const fetch = global.fetch || require('node-fetch');
 
@@ -33,14 +31,12 @@ const cache = new Map();
 function cacheKey(q, opts) {
   return `${q}::${JSON.stringify(opts || {})}`.toLowerCase();
 }
-
 function cacheGet(k) {
   const e = cache.get(k);
   if (!e) return null;
   if (Date.now() > e.expiresAt) { cache.delete(k); return null; }
   return e.value;
 }
-
 function cacheSet(k, v) {
   cache.set(k, { value: v, expiresAt: Date.now() + CONFIG.cacheTtlMs });
 }
@@ -64,9 +60,7 @@ function normalizeUrl(url) {
   try {
     const u = new URL(url);
     return `${u.hostname}${u.pathname}`.replace(/\/$/, '');
-  } catch {
-    return url;
-  }
+  } catch { return url; }
 }
 
 function dedupeResults(results) {
@@ -79,7 +73,7 @@ function dedupeResults(results) {
   return [...seen.values()];
 }
 
-// ============ SERPER (Google) ============
+// ============ SERPER ============
 async function searchSerper(query, opts = {}) {
   const body = {
     q: query,
@@ -87,7 +81,6 @@ async function searchSerper(query, opts = {}) {
     gl: opts.gl || 'in',
     hl: opts.hl || 'en',
   };
-
   if (opts.site) body.q = `site:${opts.site} ${query}`;
 
   const res = await withTimeout(
@@ -107,7 +100,6 @@ async function searchSerper(query, opts = {}) {
     const text = await res.text();
     throw new Error(`Serper ${res.status}: ${text.slice(0, 200)}`);
   }
-
   const data = await res.json();
 
   const results = (data.organic || []).map((r) => ({
@@ -124,18 +116,10 @@ async function searchSerper(query, opts = {}) {
 
   const related = (data.relatedSearches || []).map((r) => r.query);
 
-  return {
-    provider: 'serper',
-    query,
-    answer,
-    results,
-    related,
-    count: results.length,
-    raw: data,
-  };
+  return { provider: 'serper', query, answer, results, related, count: results.length, raw: data };
 }
 
-// ============ TAVILY (AI Search) ============
+// ============ TAVILY ============
 async function searchTavily(query, opts = {}) {
   const body = {
     api_key: TAVILY_API_KEY,
@@ -163,7 +147,6 @@ async function searchTavily(query, opts = {}) {
     const text = await res.text();
     throw new Error(`Tavily ${res.status}: ${text.slice(0, 200)}`);
   }
-
   const data = await res.json();
 
   const results = (data.results || []).map((r) => ({
@@ -174,71 +157,32 @@ async function searchTavily(query, opts = {}) {
     source: 'tavily',
   }));
 
-  return {
-    provider: 'tavily',
-    query,
-    answer: data.answer || null,
-    results,
-    related: [],
-    count: results.length,
-    raw: data,
-  };
+  return { provider: 'tavily', query, answer: data.answer || null, results, related: [], count: results.length, raw: data };
 }
 
 // ============ MERGE ============
 function mergeResults(serperRes, tavilyRes) {
-  const all = [
-    ...(serperRes?.results || []),
-    ...(tavilyRes?.results || []),
-  ];
-
+  const all = [...(serperRes?.results || []), ...(tavilyRes?.results || [])];
   const deduped = dedupeResults(all);
 
-  // Sort: Serper position first, then Tavily score
   deduped.sort((a, b) => {
-    if (a.source === 'serper' && b.source === 'serper') {
-      return (a.position || 99) - (b.position || 99);
-    }
-    if (a.source === 'tavily' && b.source === 'tavily') {
-      return (b.score || 0) - (a.score || 0);
-    }
+    if (a.source === 'serper' && b.source === 'serper') return (a.position || 99) - (b.position || 99);
+    if (a.source === 'tavily' && b.source === 'tavily') return (b.score || 0) - (a.score || 0);
     return 0;
   });
 
-  // Prefer Tavily answer (AI), then Serper answerBox
   const answer = tavilyRes?.answer || serperRes?.answer || null;
-
-  const related = [
-    ...new Set([
-      ...(serperRes?.related || []),
-      ...(tavilyRes?.related || []),
-    ]),
-  ];
+  const related = [...new Set([...(serperRes?.related || []), ...(tavilyRes?.related || [])])];
 
   return {
     answer,
     results: deduped,
     related,
-    providers: [
-      serperRes && 'serper',
-      tavilyRes && 'tavily',
-    ].filter(Boolean),
+    providers: [serperRes && 'serper', tavilyRes && 'tavily'].filter(Boolean),
   };
 }
 
-// ============ MAIN FUNCTION ============
-/**
- * Live search using Serper + Tavily.
- *
- * @param {string} query
- * @param {Object} opts
- *   - provider: 'auto' | 'serper' | 'tavily' | 'both' | 'race'
- *   - limit: number (default 10)
- *   - deep: use Tavily advanced mode
- *   - topic: 'general' | 'news'
- *   - site: restrict to a site
- *   - cache: enable cache (default true)
- */
+// ============ MAIN ============
 async function doLiveSearch(query, opts = {}) {
   const q = String(query || '').trim();
   if (!q) throw new Error('Query is required');
@@ -254,7 +198,6 @@ async function doLiveSearch(query, opts = {}) {
     cache: opts.cache !== false,
   };
 
-  // Cache check
   const ck = cacheKey(q, options);
   if (options.cache) {
     const hit = cacheGet(ck);
@@ -265,41 +208,23 @@ async function doLiveSearch(query, opts = {}) {
   let serperRes = null;
   let tavilyRes = null;
 
-  // --- RACE: fastest provider wins ---
   if (provider === 'race') {
-    const res = await Promise.any([
-      searchSerper(q, options),
-      searchTavily(q, options),
-    ]);
+    const res = await Promise.any([searchSerper(q, options), searchTavily(q, options)]);
     const merged = mergeResults(
       res.provider === 'serper' ? res : null,
       res.provider === 'tavily' ? res : null
     );
-    const out = {
-      success: true,
-      query: q,
-      provider: res.provider,
-      ...merged,
-      cached: false,
-    };
+    const out = { success: true, query: q, provider: res.provider, ...merged, cached: false };
     if (options.cache) cacheSet(ck, out);
     return out;
   }
 
-  // --- SINGLE PROVIDER ---
   if (provider === 'serper') {
     serperRes = await searchSerper(q, options);
   } else if (provider === 'tavily') {
     tavilyRes = await searchTavily(q, options);
-  }
-
-  // --- BOTH: parallel, tolerate individual failures ---
-  else if (provider === 'both' || provider === 'auto') {
-    const settled = await Promise.allSettled([
-      searchSerper(q, options),
-      searchTavily(q, options),
-    ]);
-
+  } else if (provider === 'both' || provider === 'auto') {
+    const settled = await Promise.allSettled([searchSerper(q, options), searchTavily(q, options)]);
     serperRes = settled[0].status === 'fulfilled' ? settled[0].value : null;
     tavilyRes = settled[1].status === 'fulfilled' ? settled[1].value : null;
 
@@ -315,7 +240,6 @@ async function doLiveSearch(query, opts = {}) {
   }
 
   const merged = mergeResults(serperRes, tavilyRes);
-
   const out = {
     success: true,
     query: q,
@@ -326,9 +250,7 @@ async function doLiveSearch(query, opts = {}) {
     count: merged.results.length,
     cached: false,
   };
-
   if (options.cache) cacheSet(ck, out);
-
   return out;
 }
 
@@ -336,20 +258,16 @@ async function doLiveSearch(query, opts = {}) {
 async function quickSearch(query, opts = {}) {
   return doLiveSearch(query, { ...opts, provider: 'race', limit: opts.limit || 5 });
 }
-
 async function deepSearch(query, opts = {}) {
   return doLiveSearch(query, { ...opts, provider: 'both', deep: true, limit: opts.limit || 15 });
 }
-
 async function newsSearch(query, opts = {}) {
   return doLiveSearch(query, { ...opts, provider: 'tavily', topic: 'news' });
 }
 
 // ============ WHATSAPP FORMAT ============
 function formatForWhatsApp(data, opts = {}) {
-  if (!data || !data.success) {
-    return `❌ Search failed: ${data?.error || 'unknown error'}`;
-  }
+  if (!data || !data.success) return `❌ Search failed: ${data?.error || 'unknown error'}`;
 
   const lines = [];
   const maxResults = opts.maxResults || 5;
@@ -400,4 +318,3 @@ module.exports = {
   clearCache: () => cache.clear(),
   getCacheSize: () => cache.size,
 };
-
