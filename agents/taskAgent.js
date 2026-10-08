@@ -16,7 +16,7 @@ const CONFIG = {
   enableCache: true,
   cacheTTLMs: 60000,
   rateLimit: { windowMs: 60000, max: 30 },
-  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-20b', 
+  groqModel: process.env.GROQ_MODEL || 'llama-3.1-8b-instant', 
 };
 
 // ============ SESSION STORE (multi-user) ============
