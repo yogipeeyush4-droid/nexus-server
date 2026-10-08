@@ -1,8 +1,9 @@
-// server.js — Nexus Forge Engine
+// server.js — Nexus Forge Engine (Brain-Powered) — FINAL
 'use strict';
 
 require('dotenv').config();
 
+// ============ CORE IMPORTS ============
 const express       = require('express');
 const helmet        = require('helmet');
 const cors          = require('cors');
@@ -14,9 +15,18 @@ const os            = require('os');
 const http          = require('http');
 const crypto        = require('crypto');
 
+// ============ APP MODULES ============
 const taskAgent      = require('./agents/taskAgent');
 const memoryManager  = require('./core/memoryManager');
 const selfAnalyzer   = require('./core/selfAnalyzer');
+
+// ============ 🧠 BRAIN MODULES (NEW) ============
+const brain         = require('./core/brain/brainCore');
+const goals         = require('./core/brain/goalEngine');
+const codeAdvisor   = require('./core/brain/codeAdvisor');
+const knowledge     = require('./core/brain/knowledgeGraph');
+const strategies    = require('./core/brain/strategyEngine');
+const reflection    = require('./core/brain/reflectionEngine');
 
 // ============ CONFIG ============
 const CONFIG = {
@@ -207,7 +217,9 @@ function createApp() {
 // ============ ROUTES ============
 function registerRoutes(app) {
 
-  // Health check
+  // ============================================================
+  // HEALTH CHECK
+  // ============================================================
   const healthHandler = (req, res) => {
     const mem = process.memoryUsage();
     res.json({
@@ -224,8 +236,21 @@ function registerRoutes(app) {
     });
   };
 
+  app.get('/health', healthHandler);
+  app.get('/api/v1/health', healthHandler);
+
+  app.get('/live', (req, res) => res.json({ ok: true }));
+  app.get('/ready', (req, res) => {
+    try {
+      memoryManager.loadMemory();
+      res.json({ ok: true, ready: true });
+    } catch (err) {
+      res.status(503).json({ ok: false, ready: false, error: err.message });
+    }
+  });
+
   // ============================================================
-  // 🔥 MAIN SWARM ROUTE — FULLY FIXED
+  // 🔥 MAIN SWARM ROUTE — BRAIN-POWERED
   // ============================================================
   app.post('/api/swarm', async (req, res) => {
     try {
@@ -234,6 +259,7 @@ function registerRoutes(app) {
 
       let cleanReply = '';
 
+      // Quick greeting shortcuts (fast path, no LLM call)
       const greetings = ['hi', 'hello', 'hey', 'namaste', 'good morning', 'good evening'];
       const howAreYou = ['kese ho', 'kaise ho', 'kya haal', 'how are you'];
 
@@ -242,52 +268,18 @@ function registerRoutes(app) {
       } else if (howAreYou.some(phrase => cmdText.includes(phrase))) {
         cleanReply = 'Main bilkul theek hoon Boss! Aap batayein, aaj kya kaam karna hai?';
       } else {
-        // Actual task agent call
-        const result = await taskAgent.execute(command || '', { userId: 'ceo' });
+        // 🧠 BRAIN handles everything — thinks, decides, searches, learns
+        const result = await brain.think(command || '', { userId: 'ceo' });
 
-        // 🔍 DEBUG — pehle 3 din zaroor rakho
-        console.log('[/api/swarm] taskAgent result:', JSON.stringify(result));
+        // Debug log (remove in production if noisy)
+        console.log('[/api/swarm] brain result:', JSON.stringify({
+          strategy: result.strategy,
+          latencyMs: result.latencyMs,
+          recalled: result.recalledCount,
+          success: result.success,
+        }));
 
-        let parsedData = result;
-        if (typeof result === 'string' && result.trim().startsWith('{') && result.trim().endsWith('}')) {
-          try { parsedData = JSON.parse(result); } catch (e) { /* keep string */ }
-        }
-
-        if (typeof parsedData === 'object' && parsedData !== null) {
-          // ✅ Priority #1: error check
-          if (parsedData.ok === false && parsedData.error) {
-            cleanReply = `❌ ${parsedData.error}`;
-          }
-          // Priority #2: direct reply fields
-          else if (parsedData.managerReply) {
-            cleanReply = parsedData.managerReply;
-          } else if (parsedData.reply) {
-            cleanReply = parsedData.reply;
-          } else if (parsedData.message) {
-            cleanReply = parsedData.message;
-          }
-          // Priority #3: structured intents
-          else if (parsedData.report) {
-            const score = parsedData.report.score ?? 'N/A';
-            const files = parsedData.report.overview?.totalFiles ?? '?';
-            cleanReply = `📊 Project Scan Complete\nScore: ${score}\nFiles: ${files}`;
-          } else if (parsedData.stats) {
-            cleanReply = `🧠 Memory Stats:\n${JSON.stringify(parsedData.stats, null, 2).slice(0, 500)}`;
-          } else if (parsedData.commands && Array.isArray(parsedData.commands)) {
-            cleanReply = `📋 Available Commands:\n${parsedData.commands.map(c => `• ${c.name} — ${c.description}`).join('\n')}`;
-          } else if (parsedData.action === 'list' && Array.isArray(parsedData.skills)) {
-            cleanReply = parsedData.skills.length
-              ? `🎯 Skills (${parsedData.count}):\n${parsedData.skills.map(s => `• ${s.name || s}`).join('\n')}`
-              : '🎯 Koi skill nahi hai abhi.';
-          } else if (parsedData.data) {
-            cleanReply = `📦 ${String(parsedData.data).slice(0, 1500)}`;
-          } else {
-            // Last-resort: show what we got so it's not silently swallowed
-            cleanReply = `[${parsedData.intent || 'Info'}] ${JSON.stringify(parsedData).slice(0, 300)}`;
-          }
-        } else {
-          cleanReply = String(result);
-        }
+        cleanReply = result.reply || 'Boss, samajh nahi aaya.';
       }
 
       res.json({
@@ -304,21 +296,9 @@ function registerRoutes(app) {
     }
   });
 
-  // Health endpoints
-  app.get('/health', healthHandler);
-  app.get('/api/v1/health', healthHandler);
-
-  app.get('/live', (req, res) => res.json({ ok: true }));
-  app.get('/ready', (req, res) => {
-    try {
-      memoryManager.loadMemory();
-      res.json({ ok: true, ready: true });
-    } catch (err) {
-      res.status(503).json({ ok: false, ready: false, error: err.message });
-    }
-  });
-
-  // Analyze
+  // ============================================================
+  // ANALYZE ROUTE
+  // ============================================================
   const analyzeLimiter = rateLimit({
     windowMs: CONFIG.rateLimit.windowMs,
     max: CONFIG.rateLimit.analyze,
@@ -351,7 +331,9 @@ function registerRoutes(app) {
     })
   );
 
-  // Memory endpoints
+  // ============================================================
+  // MEMORY ENDPOINTS
+  // ============================================================
   app.get('/api/v1/memory', apiKeyAuth, asyncHandler(async (req, res) => {
     const mem = await memoryManager.loadMemory();
     res.json({ ok: true, memory: mem });
@@ -389,7 +371,9 @@ function registerRoutes(app) {
     res.send(data);
   }));
 
-  // Metrics & system
+  // ============================================================
+  // METRICS & SYSTEM
+  // ============================================================
   app.get('/api/v1/metrics', apiKeyAuth, (req, res) => {
     res.json({ ok: true, ...metrics.snapshot() });
   });
@@ -406,7 +390,199 @@ function registerRoutes(app) {
       workers: cluster.isWorker ? cluster.worker.id : 'primary',
     });
   });
-}
+
+  // ============================================================
+  // 🧠 BRAIN ENDPOINTS
+  // ============================================================
+
+  // Full brain snapshot + natural language explanation
+  app.get('/api/brain', async (req, res) => {
+    try {
+      const snap = brain.snapshot();
+      let explain = 'Brain online hai Boss.';
+      try { explain = await brain.explainSelf(); } catch (e) { /* ignore */ }
+      res.json({ ok: true, snapshot: snap, explanation: explain });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Recent reasoning trace
+  app.get('/api/brain/thoughts', (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit, 10) || 20;
+      const snap = brain.snapshot();
+      res.json({ ok: true, thoughts: snap.thoughts.slice(-limit) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Goals list
+  app.get('/api/brain/goals', (req, res) => {
+    try {
+      res.json({ ok: true, ...goals.stats(), list: goals.prioritized(20) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Manually add a goal
+  app.post('/api/brain/goals', (req, res) => {
+    try {
+      const { title, description, priority, tags } = req.body || {};
+      if (!title) return res.status(400).json({ ok: false, error: 'title required' });
+      const r = goals.addGoal({ title, description, priority, tags, source: 'api' });
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Update goal progress
+  app.post('/api/brain/goals/:id/progress', (req, res) => {
+    try {
+      const { progress, note } = req.body || {};
+      const r = goals.updateProgress(req.params.id, progress, note);
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Complete a goal
+  app.post('/api/brain/goals/:id/complete', (req, res) => {
+    try {
+      const { outcome } = req.body || {};
+      const r = goals.complete(req.params.id, outcome || 'success');
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Abandon a goal
+  app.post('/api/brain/goals/:id/abandon', (req, res) => {
+    try {
+      const { reason } = req.body || {};
+      const r = goals.abandon(req.params.id, reason || '');
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Knowledge graph stats + search
+  app.get('/api/brain/knowledge', (req, res) => {
+    try {
+      if (req.query.q) {
+        const hits = knowledge.search(req.query.q, parseInt(req.query.limit, 10) || 5);
+        return res.json({ ok: true, query: req.query.q, hits });
+      }
+      res.json({ ok: true, ...knowledge.stats() });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Add a knowledge node manually
+  app.post('/api/brain/knowledge', (req, res) => {
+    try {
+      const { type, content, tags, weight } = req.body || {};
+      if (!content) return res.status(400).json({ ok: false, error: 'content required' });
+      const r = knowledge.addNode({ type, content, tags, weight });
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Strategies ranking
+  app.get('/api/brain/strategies', (req, res) => {
+    try {
+      res.json({
+        ok: true,
+        ...strategies.stats(),
+        ranking: strategies.ranking(req.query.category || null),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Reflections summary
+  app.get('/api/brain/reflections', (req, res) => {
+    try {
+      res.json({ ok: true, ...reflection.summary(parseInt(req.query.last, 10) || 50) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Find similar past situations
+  app.get('/api/brain/reflections/similar', (req, res) => {
+    try {
+      const q = req.query.q || '';
+      const limit = parseInt(req.query.limit, 10) || 3;
+      res.json({ ok: true, similar: reflection.findSimilar(q, limit) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Code suggestions — list
+  app.get('/api/brain/code-suggestions', (req, res) => {
+    try {
+      const status = req.query.status || 'pending';
+      res.json({ ok: true, ...codeAdvisor.stats(), list: codeAdvisor.list(status) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Ask AI to review a specific file
+  app.post('/api/brain/code-suggestions', async (req, res) => {
+    try {
+      const { file, concern } = req.body || {};
+      if (!file) return res.status(400).json({ ok: false, error: 'file required' });
+      const r = await codeAdvisor.suggestFor(file, concern || '');
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Approve a suggestion
+  app.post('/api/brain/code-suggestions/:id/approve', (req, res) => {
+    try {
+      const r = codeAdvisor.approve(req.params.id, (req.body && req.body.note) || '');
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Reject a suggestion
+  app.post('/api/brain/code-suggestions/:id/reject', (req, res) => {
+    try {
+      const r = codeAdvisor.reject(req.params.id, (req.body && req.body.reason) || '');
+      res.json(r);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Brain learning trigger — reflection analysis + self-goal creation
+  app.post('/api/brain/learn', async (req, res) => {
+    try {
+      const r = await brain.considerNewGoals();
+      res.json({ ok: true, ...r });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+}   // ← registerRoutes ends here
 
 // ============ BOOTSTRAP ============
 function startWorker() {
