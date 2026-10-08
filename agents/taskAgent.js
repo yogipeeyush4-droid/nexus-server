@@ -16,7 +16,7 @@ const CONFIG = {
   enableCache: true,
   cacheTTLMs: 60000,
   rateLimit: { windowMs: 60000, max: 30 },
-  groqModel: process.env.GROQ_MODEL || 'llama3-8b-8192', // Changed to standard available model
+  groqModel: process.env.GROQ_MODEL || 'llama3-8b-8192', 
 };
 
 // ============ SESSION STORE (multi-user) ============
@@ -354,13 +354,21 @@ function matchIntent(parsed, returnAll = false) {
   const scores = [];
   for (const intent of INTENTS) {
     let score = 0;
-    for (const p of intent.patterns) if (p.test(parsed.raw)) score += 5;
+    
+    for (const p of intent.patterns) {
+      if (p.test(parsed.raw)) score += 5;
+    }
+    
     for (const kw of intent.keywords) {
       if (parsed.tokens.some(t => fuzzyIncludes(t, kw))) score += 2;
       else if (parsed.lower.includes(kw)) score += 1;
     }
-    score += intent.weight;
-    if (score > 0) scores.push({ intent, score });
+    
+    // 🔥 FIX YAHAN LAGA HAI: Intent ka weight tabhi add hoga jab sach mein kuch match ho
+    if (score > 0) {
+      score += intent.weight;
+      scores.push({ intent, score });
+    }
   }
   scores.sort((a, b) => b.score - a.score);
   return returnAll ? scores : scores[0] ? [scores[0]] : [];
