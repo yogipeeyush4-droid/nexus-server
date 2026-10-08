@@ -111,7 +111,8 @@ class BrainCore extends EventEmitter {
     if (/\b(kya|kaise|kab|kahan|kaun|kitna|bta|batao)\b/.test(m) && recalled.length > 0) {
       return 'recall';
     }
-    if (/\b(aaj|abhi|current|latest|live|rate|price|weather|news|score)\b/.test(m)) {
+    // 🔥 Hinglish keywords added here (aj, bhao, bhav, gold, silver)
+    if (/\b(aaj|aj|abhi|current|latest|live|rate|price|bhao|bhav|weather|news|score|gold|silver)\b/.test(m)) {
       return 'live_data';
     }
     if (m.length > 100 || /\b(plan|design|architect|strategy|analyze)\b/.test(m)) {
@@ -127,9 +128,16 @@ class BrainCore extends EventEmitter {
     if (strategy === 'web_search' || strategy === 'live_data' || strategy === 'tool_chain') {
       try {
         console.log(`[Brain] Handing over task to TaskAgent. Strategy: ${strategy}`);
-        // Yahan aapke taskAgent ka jo bhi main function hai (jaise process, run, ya execute), wo call hoga
-        const agentResponse = await taskAgent.process(context.userMessage); 
-        return agentResponse;
+        // 🔥 Yahan process ki jagah execute kiya hai, jo taskAgent.js mein actual function hai
+        const agentResponse = await taskAgent.execute(context.userMessage, { userId: 'default' }); 
+        
+        // taskAgent ka reply managerReply mein aata hai
+        if (agentResponse && agentResponse.managerReply) {
+           return agentResponse.managerReply;
+        } else if (agentResponse && agentResponse.error) {
+           return `Boss, taskAgent ne error diya: ${agentResponse.error}`;
+        }
+        return `Boss, task complete ho gaya par output nahi samajh aaya.`;
       } catch (err) {
         return `Boss, main net pe gaya tha par taskAgent fail ho gaya: ${err.message}`;
       }
