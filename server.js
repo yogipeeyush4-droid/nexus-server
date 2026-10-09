@@ -27,6 +27,7 @@ const codeAdvisor   = require('./core/brain/codeAdvisor');
 const knowledge     = require('./core/brain/knowledgeGraph');
 const strategies    = require('./core/brain/strategyEngine');
 const reflection    = require('./core/brain/reflectionEngine');
+const nexusCore     = require('./core/brain/nexusCore'); // 👈 NEXUS CORE ADDED HERE
 
 // ============ CONFIG ============
 const CONFIG = {
@@ -250,7 +251,7 @@ function registerRoutes(app) {
   });
 
   // ============================================================
-  // 🔥 MAIN SWARM ROUTE — BRAIN-POWERED
+  // 🔥 MAIN SWARM ROUTE — BRAIN-POWERED (UPDATED WITH NEXUS CORE)
   // ============================================================
   app.post('/api/swarm', async (req, res) => {
     try {
@@ -268,15 +269,26 @@ function registerRoutes(app) {
       } else if (howAreYou.some(phrase => cmdText.includes(phrase))) {
         cleanReply = 'Main bilkul theek hoon Boss! Aap batayein, aaj kya kaam karna hai?';
       } else {
-        // 🧠 BRAIN handles everything — thinks, decides, searches, learns
-        const result = await brain.think(command || '', { userId: 'ceo' });
+        
+        // 🧠 1. NEXUS CORE: Process thought, extract intent, fetch cloud & local memories
+        const brainThought = await nexusCore.processThought(command || '');
+        
+        console.log(`[NexusCore] Intent: ${brainThought.intent} | Memories Found: ${brainThought.memoriesFound}`);
 
-        // Debug log (remove in production if noisy)
+        // 🧠 2. ENRICH PROMPT: Combine memory context with user command
+        // Isse aapka AI purani baaton ko dhyan mein rakh kar reply karega
+        const enrichedCommand = `[SYSTEM CONTEXT: User Intent is '${brainThought.intent}'. Relevant Past Memories: ${brainThought.memoryContext}]\n\nUser Input: ${command}`;
+
+        // 🧠 3. PASS TO EXISTING AI BRAIN
+        const result = await brain.think(enrichedCommand, { userId: 'ceo' });
+
+        // Debug log
         console.log('[/api/swarm] brain result:', JSON.stringify({
           strategy: result.strategy,
           latencyMs: result.latencyMs,
           recalled: result.recalledCount,
           success: result.success,
+          nexusAction: brainThought.action
         }));
 
         cleanReply = result.reply || 'Boss, samajh nahi aaya.';
