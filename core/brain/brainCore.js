@@ -40,8 +40,14 @@ class BrainCore extends EventEmitter {
     const start = Date.now();
     this._think({ stage: 'input', message: userMessage });
 
-    // 1. Knowledge recall
-    const recalled = knowledge.search(userMessage, 3);
+    // 1. Knowledge recall (🔥 FIX: Added 'await' kyunki ab humara brain Cloud se sync hai)
+    let recalled = await knowledge.search(userMessage, 3);
+    
+    // 🔥 SAFE ARRAY CHECK: Agar data array nahi hai toh crash hone se bachayega
+    if (!Array.isArray(recalled)) {
+      recalled = [];
+    }
+
     if (recalled.length) {
       this._think({ stage: 'recall', hits: recalled.length });
     }
